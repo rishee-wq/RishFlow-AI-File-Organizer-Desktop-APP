@@ -259,9 +259,22 @@ Browse
         async function browseDest() {
             try {
                 const folderPath = await window.pywebview.api.browse_folder('Select Destination Folder');
-                if (folderPath) {
-                    document.getElementById('destFolder').value = folderPath;
+                if (!folderPath) return; // user cancelled or empty
+                if (folderPath && folderPath.error) {
+                    console.error('browse_folder error:', folderPath.error);
+                    alert('Error selecting destination: ' + folderPath.error);
+                    return;
                 }
+                document.getElementById('destFolder').value = folderPath;
+
+                // Fetch and update folder stats for destination too
+                try {
+                    const stats = await window.pywebview.api.get_folder_stats(folderPath);
+                    updateStatsPanel(stats);
+                } catch (statErr) {
+                    console.warn('Error fetching destination stats:', statErr);
+                }
+
             } catch (error) {
                 console.error('Error selecting folder:', error);
                 alert('Error selecting folder');
@@ -417,8 +430,12 @@ Browse
         async function aiSearch() {
             const query = document.getElementById('aiSearchInput').value.trim();
             const src = document.getElementById('sourceFolder').value.trim();
+            const btn = document.querySelector('button[onclick="aiSearch()"]');
             if (!src) { alert('Please select a source folder first'); return; }
             if (!query) { alert('Please enter a query'); return; }
+
+            // simple loading state
+            if (btn) { btn.disabled = true; btn.classList.add('opacity-50'); }
 
             try {
                 const res = await window.pywebview.api.query_ai(src, query);
@@ -428,9 +445,12 @@ Browse
                     <div class="bg-background-dark rounded-xl border border-white/10 w-full max-w-2xl p-6">
                         <h3 class="text-lg font-bold mb-3">Search results for "${query}"</h3>`;
 
-                if (!res.results || res.results.length === 0) {
-                    html += '<p class="text-sm text-slate-400">No matches found.</p>';
+                if ((!res.results || res.results.length === 0) && res.indexed_files === 0) {
+                    html += '<p class="text-sm text-slate-400">No indexed text found in this folder. Add .txt or .pdf files to enable AI search.</p>';
+                } else if (!res.results || res.results.length === 0) {
+                    html += `<p class="text-sm text-slate-400">No matches found (indexed files: ${res.indexed_files}).</p>`;
                 } else {
+                    html += `<div class="text-[10px] text-slate-400 mb-3">Indexed files: ${res.indexed_files}</div>`;
                     html += '<div class="space-y-3">';
                     res.results.forEach(r => {
                         html += `<div class="p-3 bg-white/3 rounded"><div class="text-sm font-medium text-slate-100 truncate">${r.name}</div><div class="text-xs text-slate-400 mt-1">${r.snippet || ''}</div><div class="text-[10px] text-slate-500 mt-2">${r.path}</div></div>`;
@@ -448,6 +468,8 @@ Browse
             } catch (err) {
                 console.error('AI search error', err);
                 alert('AI search failed: ' + err);
+            } finally {
+                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50'); }
             }
         }
 

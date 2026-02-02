@@ -90,15 +90,26 @@ class RishFlowAPI:
             return {'error': str(e)}
     
     def browse_folder(self, title="Select Folder"):
-        """Open folder browser dialog"""
-        import tkinter as tk
-        from tkinter import filedialog
-        
-        root = tk.Tk()
-        root.withdraw()
-        folder = filedialog.askdirectory(title=title)
-        root.destroy()
-        return folder
+        """Open folder browser dialog (returns absolute path or dict with error)."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+
+            root = tk.Tk()
+            root.withdraw()
+            folder = filedialog.askdirectory(title=title)
+            root.destroy()
+
+            if not folder:
+                return ""  # user cancelled
+
+            # Return absolute path
+            abs_path = os.path.abspath(folder)
+            print(f"[browse_folder] Selected: {abs_path}")
+            return abs_path
+        except Exception as e:
+            print(f"[browse_folder] Error: {e}")
+            return {"error": str(e)}
     
     def start_organizing(self, source_path, dest_path, sort_mode):
         """Start file organization in background thread"""
@@ -352,7 +363,8 @@ class RishFlowAPI:
                         reader = pypdf.PdfReader(full)
                         pages = [p.extract_text() or '' for p in reader.pages]
                         text = '\n'.join(pages)
-                    except Exception:
+                    except Exception as ex:
+                        print(f"[index_for_ai] PDF extract error for {full}: {ex}")
                         text = ''
                 # store trimmed text for search
                 if text:
@@ -360,8 +372,10 @@ class RishFlowAPI:
 
             # store index in-memory for now
             self._ai_index = index
+            print(f"[index_for_ai] Indexed {len(index)} text documents in {folder_path}")
             return {'indexed_files': len(index)}
         except Exception as e:
+            print(f"[index_for_ai] Error: {e}")
             return {"error": str(e)}
 
     def query_ai(self, folder_path, query):
@@ -369,7 +383,9 @@ class RishFlowAPI:
         try:
             # ensure index exists and is for current folder
             if not hasattr(self, '_ai_index') or not getattr(self, '_ai_index'):
-                self.index_for_ai(folder_path)
+                idx_resp = self.index_for_ai(folder_path)
+            else:
+                idx_resp = {'indexed_files': len(getattr(self, '_ai_index', []))}
 
             results = []
             q = query.lower()
@@ -390,8 +406,10 @@ class RishFlowAPI:
                     if not any(r['path'] == path for r in results):
                         results.append({'name': f, 'path': path, 'snippet': ''})
 
-            return {'results': results}
+            # include indexed_files count for UI feedback
+            return {'results': results, 'indexed_files': idx_resp.get('indexed_files', 0)}
         except Exception as e:
+            print(f"[query_ai] Error: {e}")
             return {"error": str(e)}
 
     def _cleanup_empty_folder(self, folder_path):
