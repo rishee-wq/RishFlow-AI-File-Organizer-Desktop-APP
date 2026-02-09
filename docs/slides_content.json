@@ -1,0 +1,8 @@
+[
+  {"title":"RishFlow — File Organizer","subtitle":"AI-powered, privacy-first desktop app","duration":4},
+  {"title":"Quick Features","bullets":["Organize by extension, date, size, AI" ,"Folder stats: counts & total size","Duplicate detection & undo","Lightweight local AI search"] ,"duration":6},
+  {"title":"How it Works","bullets":["Frontend: Tailwind HTML dashboard","Backend: Python + pywebview API","AI: OpenCV + OCR heuristics","Future: RAG via LangChain + vector DB"],"duration":6},
+  {"title":"Try it locally","bullets":["Select source folder → live Items & Size","Use AI Search for text/PDFs","Start organizing → Undo available"],"duration":6},
+  {"title":"Privacy & Publish Notes","bullets":["Local indexing by default","Opt-in cloud LLM only if configured","Include docs, tests & CI for release"],"duration":6},
+  {"title":"Get Started","bullets":["See docs/RishFlow_Docs.pdf","GitHub: rishee-wq/files-organizer"],"duration":5}
+]

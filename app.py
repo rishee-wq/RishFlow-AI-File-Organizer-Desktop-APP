@@ -4,6 +4,7 @@ HTML Dashboard UI with Python Backend
 """
 
 import webview
+import sys
 import os
 import json
 import threading
@@ -25,9 +26,9 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 # App paths
-APP_ICON = resource_path("logo.ico")
-FOLDER_NAME = "stitch_rishflow_dashboard_home (1)"
-UI_HTML = resource_path(os.path.join(FOLDER_NAME, "code.html"))
+APP_ICON = resource_path("RishFlow.jpg")
+FOLDER_NAME = "RishFlow UI Design"
+UI_HTML = resource_path(os.path.join(FOLDER_NAME, "dist", "index.html"))
 
 class RishFlowAPI:
     """Backend API for the dashboard"""
@@ -72,7 +73,7 @@ class RishFlowAPI:
         try:
             conn = sqlite3.connect(self.db_path, check_same_thread=False)
             cur = conn.cursor()
-            cur.execute('SELECT id, timestamp, action, source_file, destination, status FROM activity_log ORDER BY timestamp DESC LIMIT 50')
+            cur.execute('SELECT id, timestamp, action, source_file, destination, status FROM activity_log ORDER BY timestamp DESC LIMIT 500')
             rows = cur.fetchall()
             conn.close()
             logs = []
@@ -92,24 +93,51 @@ class RishFlowAPI:
     def browse_folder(self, title="Select Folder"):
         """Open folder browser dialog (returns absolute path or dict with error)."""
         try:
-            import tkinter as tk
-            from tkinter import filedialog
+            with open("debug_log.txt", "a") as f:
+                f.write(f"browse_folder called at {datetime.now()}\n")
 
-            root = tk.Tk()
-            root.withdraw()
-            folder = filedialog.askdirectory(title=title)
-            root.destroy()
+            # Use pywebview's native dialog if window is available
+            if webview.windows:
+                with open("debug_log.txt", "a") as f:
+                    f.write("webview.windows is available\n")
+                
+                result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG, allow_multiple=False)
+                
+                with open("debug_log.txt", "a") as f:
+                    f.write(f"create_file_dialog result: {result}\n")
 
-            if not folder:
+                if result and len(result) > 0:
+                    # Return absolute path
+                    abs_path = os.path.abspath(result[0])
+                    print(f"[browse_folder] Selected: {abs_path}")
+                    return abs_path
                 return ""  # user cancelled
+            else:
+                with open("debug_log.txt", "a") as f:
+                    f.write("webview.windows NOT available, using tkinter\n")
+                    
+                # Fallback to tkinter if no window (unlikely in this app structure)
+                import tkinter as tk
+                from tkinter import filedialog
 
-            # Return absolute path
-            abs_path = os.path.abspath(folder)
-            print(f"[browse_folder] Selected: {abs_path}")
-            return abs_path
+                root = tk.Tk()
+                root.withdraw()
+                folder = filedialog.askdirectory(title=title)
+                root.destroy()
+
+                if not folder:
+                    return ""  # user cancelled
+
+                abs_path = os.path.abspath(folder)
+                print(f"[browse_folder] Selected: {abs_path}")
+                return abs_path
+
         except Exception as e:
+            error_msg = str(e)
             print(f"[browse_folder] Error: {e}")
-            return {"error": str(e)}
+            with open("debug_log.txt", "a") as f:
+                f.write(f"Error in browse_folder: {error_msg}\n")
+            return {"error": error_msg}
     
     def start_organizing(self, source_path, dest_path, sort_mode):
         """Start file organization in background thread"""
@@ -126,10 +154,28 @@ class RishFlowAPI:
         with self._ops_lock:
             self.last_operations = []
 
+    def start_organizing(self, source, dest, sort_mode, user_categories=None):
+        """Start the organization process in a background thread"""
+        source_path = os.path.abspath(source)
+        dest_path = os.path.abspath(dest)
+        
+        if not os.path.exists(source_path):
+            return {"error": "Source folder does not exist"}
+            
+        if not os.path.exists(dest_path):
+            try:
+                os.makedirs(dest_path)
+            except Exception as e:
+                return {"error": f"Cannot create destination folder: {str(e)}"}
+        
+        # Clear recorded operations for a fresh run
+        with self._ops_lock:
+            self.last_operations = []
+
         # Start organizing in a background thread
         self.organizer_thread = threading.Thread(
             target=self._organize_files,
-            args=(source_path, dest_path, sort_mode),
+            args=(source_path, dest_path, sort_mode, user_categories),
             daemon=True
         )
         self.organizer_thread.start()
@@ -137,12 +183,21 @@ class RishFlowAPI:
         self.log_activity(f"Started organizing with {sort_mode} mode", source_path, dest_path, "in_progress")
         return {"status": "organizing", "mode": sort_mode}
     
-    def _organize_files(self, source_path, dest_path, sort_mode):
+    def _organize_files(self, source_path, dest_path, sort_mode, user_categories=None):
         """Actually organize files based on sort mode"""
         try:
             files_moved = 0
             files_skipped = 0
             
+            # Create a simplified set of user category names for matching (lowercase)
+            user_cat_names = set()
+            if user_categories:
+                for cat in user_categories:
+                    if isinstance(cat, dict) and 'name' in cat:
+                        user_cat_names.add(cat['name'].lower())
+                    elif isinstance(cat, str):
+                        user_cat_names.add(cat.lower())
+
             for filename in os.listdir(source_path):
                 source_file = os.path.join(source_path, filename)
                 
@@ -168,19 +223,60 @@ class RishFlowAPI:
                         folder_name = "Medium (1-100MB)"
                     else:
                         folder_name = "Large (> 100MB)"
-                else:  # AI-based Content
-                    # Simple classification based on file type
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext in ['.pdf', '.doc', '.docx', '.txt', '.xlsx']:
-                        folder_name = "Documents"
-                    elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-                        folder_name = "Images"
-                    elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
-                        folder_name = "Videos"
-                    elif ext in ['.mp3', '.wav', '.flac', '.aac']:
-                        folder_name = "Audio"
+                elif sort_mode == "File Name":
+                    # Organize by first character of filename
+                    first_char = filename[0].upper()
+                    if first_char.isalpha():
+                        folder_name = first_char
+                    elif first_char.isdigit():
+                        folder_name = "0-9"
                     else:
-                        folder_name = "Other"
+                        folder_name = "Symbols"
+                else:  # AI-based Content
+                    # Use AI Smart Sorter
+                    try:
+                        sorter = AISmartSorter()
+                        ai_full_path = sorter.classify_file(source_file)
+                        
+                        # AI returns paths like "Images/Family/..." or "Documents/Receipts/..."
+                        # Extract the top-level category from AI result
+                        ai_top_category = ai_full_path.split('/')[0]
+                        
+                        # Check if this top-level category exists in user's categories
+                        if ai_top_category.lower() in user_cat_names:
+                            # Use the name as defined by AI (which matches user's category name)
+                            # We preserve the AI's capitalization or could lookup user's capitalization
+                            # For now, let's use the AI's top category which effectively maps to the user's category
+                            folder_name = ai_top_category
+                            
+                            # Note: We are currently discarding sub-categories (e.g. "Family") if we match a user category.
+                            # If we want to keep sub-structure within user category:
+                            # folder_name = ai_full_path 
+                            # But request says "check if they fit in... same type of files must be in same category"
+                            # implying flat categorization into the user's definition. 
+                            # Let's stick to using the top level match.
+                            
+                        else:
+                            # If no match in user categories, use the AI's full path (creating new structure)
+                            # OR just the top level?
+                            # "then the app must create the categories related to the files"
+                            # Using the full path (with subfolders) is more organized.
+                            folder_name = ai_full_path
+                            
+                    except Exception as e:
+                        print(f"AI Sort Error for {filename}: {e}")
+                        # Fallback to simple classification
+                        ext = os.path.splitext(filename)[1].lower()
+                        if ext in ['.pdf', '.doc', '.docx', '.txt', '.xlsx']:
+                            folder_name = "Documents"
+                        elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                            folder_name = "Images"
+                        elif ext in ['.mp4', '.avi', '.mov', '.mkv']:
+                            folder_name = "Videos"
+                        elif ext in ['.mp3', '.wav', '.flac', '.aac']:
+                            folder_name = "Audio"
+                        else:
+                            folder_name = "Other"
                 
                 # Create destination folder
                 folder_path = os.path.join(dest_path, folder_name)
@@ -331,49 +427,131 @@ class RishFlowAPI:
         except Exception as e:
             return {"error": str(e)}
 
-    def index_for_ai(self, folder_path):
-        """Lightweight indexer: extracts text from .txt and (if available) .pdf files into memory for quick local search.
-        This is a small, privacy-first scaffold. For production RAG use LangChain + a vector DB.
+    def index_for_ai(self, folder_path, max_workers=4, max_pdf_pages=20, max_file_size=50*1024*1024):
+        """Efficient indexer with on-disk cache and parallel extraction.
+        - Caches extracted text per file in .ai_cache using a hash of the absolute path + mtime
+        - Parallelizes extraction with a ThreadPoolExecutor
+        - Limits PDF pages to `max_pdf_pages` and large text files to last 1MB if > `max_file_size`
         """
         try:
             if not os.path.isdir(folder_path):
                 return {"error": "Invalid folder"}
 
-            index = []
-            # optional import for PDFs
-            try:
-                import pypdf
-            except Exception:
-                pypdf = None
+            cache_dir = os.path.join('.ai_cache')
+            os.makedirs(cache_dir, exist_ok=True)
 
+            # Gather candidate files
+            candidates = []
             for filename in os.listdir(folder_path):
                 full = os.path.join(folder_path, filename)
                 if os.path.isdir(full):
                     continue
                 ext = os.path.splitext(filename)[1].lower()
-                text = ''
-                if ext == '.txt':
-                    try:
-                        with open(full, 'r', encoding='utf-8') as f:
-                            text = f.read()
-                    except Exception:
-                        text = ''
-                elif ext == '.pdf' and pypdf:
-                    try:
-                        reader = pypdf.PdfReader(full)
-                        pages = [p.extract_text() or '' for p in reader.pages]
-                        text = '\n'.join(pages)
-                    except Exception as ex:
-                        print(f"[index_for_ai] PDF extract error for {full}: {ex}")
-                        text = ''
-                # store trimmed text for search
-                if text:
-                    index.append({'path': full, 'name': filename, 'text': text})
+                if ext in ['.txt', '.pdf']:
+                    candidates.append(full)
 
-            # store index in-memory for now
+            total = len(candidates)
+            # metadata for progress reporting
+            self._ai_index_meta = {'in_progress': True, 'total': total, 'done': 0}
+
+            index = []
+
+            # helper to compute cache filename
+            import hashlib, json
+            def cache_path_for(p):
+                key = hashlib.sha256(os.path.abspath(p).encode('utf-8')).hexdigest()
+                return os.path.join(cache_dir, f"{key}.json")
+
+            # optional pdf reader
+            try:
+                import pypdf
+            except Exception:
+                pypdf = None
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            def process_file(full):
+                try:
+                    mtime = os.path.getmtime(full)
+                    cache_file = cache_path_for(full)
+
+                    # Try load cache
+                    if os.path.exists(cache_file):
+                        try:
+                            with open(cache_file, 'r', encoding='utf-8') as cf:
+                                data = json.load(cf)
+                                if data.get('mtime') == mtime and data.get('text') is not None:
+                                    return {'path': full, 'name': os.path.basename(full), 'text': data.get('text')}
+                        except Exception:
+                            pass
+
+                    # Extract text (respect size/page limits)
+                    ext = os.path.splitext(full)[1].lower()
+                    text = ''
+                    size = os.path.getsize(full)
+
+                    if ext == '.txt':
+                        try:
+                            if size > max_file_size:
+                                # read last 1MB for large files (assume relevant info likely near end)
+                                with open(full, 'rb') as f:
+                                    f.seek(max(0, size - 1024 * 1024))
+                                    raw = f.read()
+                                    text = raw.decode('utf-8', errors='ignore')
+                            else:
+                                with open(full, 'r', encoding='utf-8', errors='ignore') as f:
+                                    text = f.read()
+                        except Exception as ex:
+                            print(f"[index_for_ai] TXT read error for {full}: {ex}")
+                            text = ''
+
+                    elif ext == '.pdf' and pypdf:
+                        try:
+                            reader = pypdf.PdfReader(full)
+                            pages_to_read = min(len(reader.pages), max_pdf_pages)
+                            pages = []
+                            for p in reader.pages[:pages_to_read]:
+                                try:
+                                    pages.append(p.extract_text() or '')
+                                except Exception:
+                                    pages.append('')
+                            text = '\n'.join(pages)
+                        except Exception as ex:
+                            print(f"[index_for_ai] PDF extract error for {full}: {ex}")
+                            text = ''
+
+                    # Save to cache
+                    try:
+                        with open(cache_file, 'w', encoding='utf-8') as cf:
+                            json.dump({'mtime': mtime, 'text': text}, cf)
+                    except Exception:
+                        pass
+
+                    return {'path': full, 'name': os.path.basename(full), 'text': text}
+                finally:
+                    # update progress
+                    try:
+                        self._ai_index_meta['done'] += 1
+                    except Exception:
+                        pass
+
+            # Run extraction in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                futures = [ex.submit(process_file, f) for f in candidates]
+                for fut in as_completed(futures):
+                    try:
+                        res = fut.result()
+                        if res and res.get('text'):
+                            index.append(res)
+                    except Exception:
+                        pass
+
+            # Store index and mark complete
             self._ai_index = index
+            self._ai_index_meta['in_progress'] = False
+
             print(f"[index_for_ai] Indexed {len(index)} text documents in {folder_path}")
-            return {'indexed_files': len(index)}
+            return {'indexed_files': len(index), 'total': total, 'done': self._ai_index_meta.get('done', 0), 'in_progress': False}
         except Exception as e:
             print(f"[index_for_ai] Error: {e}")
             return {"error": str(e)}
@@ -381,35 +559,69 @@ class RishFlowAPI:
     def query_ai(self, folder_path, query):
         """Very simple local query: ensures index exists then searches for query substrings and returns top matches with snippets."""
         try:
-            # ensure index exists and is for current folder
+            # Start indexing if not present
             if not hasattr(self, '_ai_index') or not getattr(self, '_ai_index'):
-                idx_resp = self.index_for_ai(folder_path)
+                # kick off background indexing and proceed with empty results
+                try:
+                    self.start_index_for_ai(folder_path)
+                    idx_resp = {'indexed_files': 0}
+                except Exception:
+                    idx_resp = {'indexed_files': 0}
             else:
                 idx_resp = {'indexed_files': len(getattr(self, '_ai_index', []))}
+
+            # If indexing in progress, return progress and partial results
+            in_progress = bool(getattr(self, '_ai_index_meta', {}).get('in_progress', False))
+            total = getattr(self, '_ai_index_meta', {}).get('total', idx_resp.get('indexed_files', 0))
+            done = getattr(self, '_ai_index_meta', {}).get('done', idx_resp.get('indexed_files', 0))
 
             results = []
             q = query.lower()
             for item in getattr(self, '_ai_index', []):
-                if q in item['text'].lower() or q in item['name'].lower():
-                    # find snippet
-                    idx = item['text'].lower().find(q)
+                t = item.get('text','')
+                if not t:
+                    continue
+                if q in t.lower() or q in item.get('name','').lower():
+                    idx = t.lower().find(q)
                     snippet = ''
                     if idx != -1:
                         start = max(0, idx - 80)
-                        snippet = item['text'][start:start+240].replace('\n',' ')
+                        snippet = t[start:start+240].replace('\n',' ')
                     results.append({'name': item['name'], 'path': item['path'], 'snippet': snippet})
 
-            # add simple filename matches as well
+            # add filename matches for non-text files
             for f in os.listdir(folder_path):
                 if q in f.lower():
                     path = os.path.join(folder_path, f)
                     if not any(r['path'] == path for r in results):
                         results.append({'name': f, 'path': path, 'snippet': ''})
 
-            # include indexed_files count for UI feedback
-            return {'results': results, 'indexed_files': idx_resp.get('indexed_files', 0)}
+            return {'results': results, 'indexed_files': idx_resp.get('indexed_files', 0), 'in_progress': in_progress, 'total': total, 'done': done}
         except Exception as e:
             print(f"[query_ai] Error: {e}")
+            return {"error": str(e)}
+
+    def start_index_for_ai(self, folder_path):
+        """Start index_for_ai in a background thread and return immediately."""
+        try:
+            if not os.path.isdir(folder_path):
+                return {"error": "Invalid folder"}
+
+            # If already indexing this folder, return status
+            if getattr(self, '_ai_index_meta', {}).get('in_progress'):
+                return {'status': 'already_indexing', 'total': self._ai_index_meta.get('total', 0), 'done': self._ai_index_meta.get('done', 0)}
+
+            t = threading.Thread(target=self.index_for_ai, args=(folder_path,), daemon=True)
+            t.start()
+            return {'status': 'started'}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_ai_index_status(self):
+        """Return current AI index metadata including progress."""
+        try:
+            return getattr(self, '_ai_index_meta', {})
+        except Exception as e:
             return {"error": str(e)}
 
     def _cleanup_empty_folder(self, folder_path):
@@ -512,6 +724,128 @@ class RishFlowAPI:
         self.log_activity("Duplicate scan", folder_path, "", "success")
         return {"duplicates": len(duplicates), "details": str(duplicates)}
 
+    def save_state(self, key, value):
+        """Save a simple key-value pair to state.json"""
+        try:
+            state_file = "state.json"
+            state = {}
+            if os.path.exists(state_file):
+                try:
+                    with open(state_file, 'r') as f:
+                        state = json.load(f)
+                except Exception:
+                    pass
+            
+            state[key] = value
+            
+            with open(state_file, 'w') as f:
+                json.dump(state, f)
+            return {"status": "saved"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def load_state(self, key):
+        """Load a value from state.json"""
+        try:
+            state_file = "state.json"
+            if not os.path.exists(state_file):
+                return {"value": None}
+                
+            with open(state_file, 'r') as f:
+                state = json.load(f)
+            return {"value": state.get(key)}
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def clear_activity_logs(self):
+        """Clear all activity logs from the database"""
+        try:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cur = conn.cursor()
+            cur.execute('DELETE FROM activity_log')
+            conn.commit()
+            deleted_count = cur.rowcount
+            conn.close()
+            return {"status": "cleared", "count": deleted_count}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def scan_organized_files(self, root_path):
+        """
+        Scan the organized folder structure.
+        Assumes first-level folders are 'Categories'.
+        Returns list of all files with deduced category.
+        """
+        try:
+            if not root_path or not os.path.isdir(root_path):
+                return {"error": "Invalid folder"}
+
+            scanning_files = []
+            
+            # Walk through the root path
+            # root_path is the destination folder (e.g., 'Organized')
+            
+            for item in os.listdir(root_path):
+                category_path = os.path.join(root_path, item)
+                print(f"[scan] Checking item: {item}, is_dir: {os.path.isdir(category_path)}")
+                
+                # We treat top-level directories as Categories
+                if os.path.isdir(category_path):
+                    category_name = item
+                    print(f"[scan] Found category: {category_name}")
+                    
+                    # Scan files inside this category
+                    for root, dirs, files in os.walk(category_path):
+                        for file in files:
+                            # Skip hidden files
+                            if file.startswith('.'): 
+                                continue
+                                
+                            full_path = os.path.join(root, file)
+                            size = os.path.getsize(full_path)
+                            mtime = os.path.getmtime(full_path)
+                            
+                            # Determine type
+                            ext = os.path.splitext(file)[1].lower()
+                            if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']: ftype = 'image'
+                            elif ext in ['.mp4', '.avi', '.mov', '.mkv']: ftype = 'video'
+                            elif ext in ['.pdf', '.doc', '.docx', '.txt', '.xlsx']: ftype = 'document'
+                            elif ext in ['.mp3', '.wav', '.flac']: ftype = 'audio'
+                            elif ext in ['.zip', '.rar', '.7z']: ftype = 'archive'
+                            else: ftype = 'file'
+                            
+                            scanning_files.append({
+                                'name': file,
+                                'path': full_path,
+                                'size': size,
+                                'modified': mtime,
+                                'category': category_name,
+                                'type': ftype
+                            })
+                
+                # If there are loose files in the root, treat them as Uncategorized
+                elif os.path.isfile(category_path):
+                    if item.startswith('.'): continue
+                    
+                    scanning_files.append({
+                        'name': item,
+                        'path': category_path,
+                        'size': os.path.getsize(category_path),
+                        'modified': os.path.getmtime(category_path),
+                        'category': 'Uncategorized',
+                        'type': 'file' # Simplified type check for loose files
+                    })
+
+            return {"files": scanning_files}
+            
+        except Exception as e:
+            return {"error": str(e)}
+
+import pystray
+from PIL import Image
+
+# ... (RishFlowAPI class remains same until create_app) ...
+
 def create_app():
     """Create and configure the webview application"""
     api = RishFlowAPI()
@@ -519,6 +853,7 @@ def create_app():
     # Create webview - use HTTP URL directly, don't add file:// prefix
     url = UI_HTML if UI_HTML.startswith('http') else f'file://{os.path.abspath(UI_HTML)}'
     
+    # Start visible (default)
     app = webview.create_window(
         title='🚀 RishFlow v2.0 - Smart File Organizer',
         url=url,
@@ -527,13 +862,46 @@ def create_app():
         min_size=(1200, 700),
         background_color='#0c1a25',
         js_api=api
+        # hidden=True Removed to show app on start
     )
     
     # Set icon if available
     if os.path.exists(APP_ICON):
         app.icon = APP_ICON
     
-    return app, api
+    # Override closing behavior to Minimize to Tray
+    def on_closing():
+        app.hide()
+        return False # Prevent actual closing
+        
+    app.events.closing += on_closing
+    
+    return app, api, on_closing
+
+def setup_tray(app, on_closing):
+    """Setup system tray icon and menu"""
+    def on_quit(icon, item):
+        icon.stop()
+        app.destroy()
+    
+    def on_show(icon, item):
+        app.show()
+        app.restore()
+        
+    # Create icon image
+    if os.path.exists(APP_ICON):
+        image = Image.open(APP_ICON)
+    else:
+        # Create a simple colored square if no icon
+        image = Image.new('RGB', (64, 64), color=(12, 26, 37))
+    
+    menu = pystray.Menu(
+        pystray.MenuItem("Open RishFlow", on_show, default=True),
+        pystray.MenuItem("Exit", on_quit)
+    )
+    
+    icon = pystray.Icon("RishFlow", image, "RishFlow", menu)
+    icon.run()
 
 def main():
     print("Starting RishFlow v2.0...")
@@ -542,12 +910,24 @@ def main():
     if not UI_HTML.startswith('http'):
         if not os.path.exists(UI_HTML):
             print(f"Error: UI file not found at {UI_HTML}")
-            print("Please ensure the 'stitch_rishflow_dashboard_home (1)' folder exists")
             return
     
-    # Create and run app
-    app, api = create_app()
-    webview.start(debug=True)
+    # Create app
+    app, api, on_closing = create_app()
+    
+    # Start System Tray in a separate thread
+    tray_thread = threading.Thread(target=setup_tray, args=(app, on_closing), daemon=True)
+    tray_thread.start()
+    
+    def on_start():
+        print("Webview started. Forcing window show...")
+        app.show()
+        app.restore()
+        
+    # Start webview (Main Thread) - Disable Debug to hide "Workspace" window
+    # Valid types: 'edge', 'chromium', 'mshtml', 'cef'
+    # Try forcing edge or chromium if issues persist (usually auto)
+    webview.start(func=on_start, debug=False)
 
 if __name__ == "__main__":
     main()

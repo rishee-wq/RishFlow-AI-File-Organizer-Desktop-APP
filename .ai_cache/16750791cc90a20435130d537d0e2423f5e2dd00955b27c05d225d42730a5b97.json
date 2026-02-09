@@ -1,0 +1,1 @@
+{"mtime": 1767426242.4757478, "text": "WHATSAPP_API_BASE_URL=https://gate.whapi.cloud\nWHATSAPP_API_TOKEN=QUIoI1IN6fHkZ5TCk4BCl7123xYKqeIx\nEXCEL_PATH=clients.xlsx\nDRY_RUN=True\nWHATSAPP_PROVIDER=whapi  # Add this line\n"}

@@ -1,0 +1,54 @@
+browse_folder called at 2026-02-07 23:43:54.970952
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-07 23:44:05.783944
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Music',)
+browse_folder called at 2026-02-07 23:48:41.700032
+webview.windows is available
+create_file_dialog result: None
+browse_folder called at 2026-02-07 23:52:52.429737
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-07 23:53:00.654241
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Music',)
+browse_folder called at 2026-02-08 00:06:41.898105
+webview.windows is available
+create_file_dialog result: None
+browse_folder called at 2026-02-08 00:06:50.533964
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-08 00:06:58.119933
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 00:18:55.844854
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 00:19:04.007305
+webview.windows is available
+create_file_dialog result: None
+browse_folder called at 2026-02-08 00:19:10.788512
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-08 00:19:26.495676
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 00:29:04.519886
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-08 00:29:09.566211
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 00:32:27.672480
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)
+browse_folder called at 2026-02-08 00:32:34.311607
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 00:35:32.767636
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\OneDrive\\Pictures',)
+browse_folder called at 2026-02-08 21:40:57.531387
+webview.windows is available
+create_file_dialog result: ('C:\\Users\\RISHEE SHARMA\\Downloads',)

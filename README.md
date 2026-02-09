@@ -9,12 +9,34 @@ Key features
 - Lightweight local AI index (text + PDF search) with upgrade path to full RAG
 - Privacy-first: local processing, optional cloud LLMs are explicit opt-in
 
-Quick start
-1. git clone https://github.com/rishee-wq/files-organizer
-2. python -m venv .venv && .\.venv\Scripts\activate
-3. pip install -r requirements.txt
-4. (Optional) pip install pypdf for PDF indexing
-5. python app.py
+
+### Quick Start (Full App)
+
+**Prerequisites:**
+- Python 3.8+
+- Node.js 16+ (for UI)
+
+**1. Clone & Setup Backend**
+```bash
+git clone https://github.com/rishee-wq/files-organizer
+cd files-organizer
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**2. Setup Frontend**
+```bash
+cd "RishFlow UI Design"
+npm install
+npm run build
+cd ..
+```
+
+**3. Run Application**
+```bash
+python app.py
+```
 
 Architecture & research notes
 - Frontend: HTML dashboard (Tailwind) + pywebview integration
@@ -26,10 +48,11 @@ Research highlights (internal/experimental)
 
 See `docs/RishFlow_Docs.pdf` for a detailed publication-ready overview including architecture diagrams, privacy notes and a publishing checklist.
 
-Roadmap
-- Add LangChain-based RAG and embedding indexing (optional cloud or local LLM)
-- UI polish and theme pack
-- Unit tests, CI pipeline and PyInstaller release builds
+## Roadmap
+- [ ] Add LangChain-based RAG and embedding indexing
+- [ ] UI polish and theme pack
+- [ ] Unit tests, CI pipeline and PyInstaller release builds
+- [ ] **Cross-Device Sync:** Enable real-time sync with GitHub/Cloud storage.
 
 License: MIT
 
