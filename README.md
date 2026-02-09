@@ -18,8 +18,8 @@ Key features
 
 **1. Clone & Setup Backend**
 ```bash
-git clone https://github.com/rishee-wq/files-organizer
-cd files-organizer
+git clone https://github.com/rishee-wq/RishFlow-AI-File-Organizer-Desktop-APP
+cd RishFlow-AI-File-Organizer-Desktop-APP
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements.txt
@@ -55,4 +55,3 @@ See `docs/RishFlow_Docs.pdf` for a detailed publication-ready overview including
 - [ ] **Cross-Device Sync:** Enable real-time sync with GitHub/Cloud storage.
 
 License: MIT
-
