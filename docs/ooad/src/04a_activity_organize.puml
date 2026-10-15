@@ -1,0 +1,90 @@
+@startuml 04a_activity_organize
+!include _style.iuml
+!pragma useVerticalIf on
+title RishFlow – Activity Diagram: Organize Files (with swimlanes)
+
+|User|
+start
+:Open File Organizer;
+:Select source folder;
+:Select destination folder;
+:Choose sort mode;
+:Click "Organize";
+
+|RishFlow UI|
+:Call start_organizing(source, dest, mode, categories);
+
+|RishFlowAPI (Backend)|
+if (Source folder exists?) then (no)
+  |RishFlow UI|
+  :Show "Source folder does not exist";
+  stop
+else (yes)
+endif
+|RishFlowAPI (Backend)|
+if (Destination exists?) then (no)
+  :Create destination folder;
+else (yes)
+endif
+:Clear last_operations;
+:Start background organizer thread;
+:Log "Started organizing";
+
+|RishFlow UI|
+:Show progress;
+
+|RishFlowAPI (Backend)|
+:List files in source folder;
+while (More files?) is (yes)
+  if (Is directory?) then (yes)
+  else (no)
+    switch (Sort mode?)
+    case (File Extension)
+      :folder = EXTENSION;
+    case (Date Modified)
+      :folder = YYYY-MM-DD;
+    case (Size Category)
+      :folder = Small / Medium / Large;
+    case (File Name)
+      :folder = first letter / 0-9 / Symbols;
+    case (AI-based Content)
+      :Send file to AI Smart Sorter;
+      |AI Smart Sorter|
+      :classify_file(file);
+      |RishFlowAPI (Backend)|
+      if (AI error?) then (yes)
+        :Fallback: Documents / Images /\nVideos / Audio / Other;
+      elseif (Top category in user categories?) then (yes)
+        :folder = user category;
+      else (no)
+        :folder = full AI path;
+      endif
+    endswitch
+    :Create destination sub-folder;
+    :Move file;
+    if (Move succeeded?) then (yes)
+      :Record operation in last_ops.json;
+      :Log "Moved to <folder>";
+    else (no)
+      :Log "Failed to move";
+    endif
+  endif
+endwhile (no)
+:Log summary (moved / skipped);
+:Notify UI (onOrganizeComplete);
+
+|RishFlow UI|
+:Refresh file list & activity log;
+
+|User|
+if (Satisfied with result?) then (yes)
+  stop
+else (no)
+  :Click "Undo";
+  |RishFlowAPI (Backend)|
+  :revert_last() – move files back,\nremove empty folders;
+  |RishFlow UI|
+  :Show "files restored";
+  stop
+endif
+@enduml

@@ -1,0 +1,42 @@
+skinparam dpi 150
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam backgroundColor white
+skinparam ArrowColor #333333
+skinparam ActorBorderColor #333333
+skinparam ActorBackgroundColor #FFFFFF
+skinparam usecase {
+  BackgroundColor #FFF9DB
+  BorderColor #B8860B
+}
+skinparam rectangle {
+  BorderColor #555555
+  BackgroundColor #FFFFFF
+}
+skinparam state {
+  BackgroundColor #FFF9DB
+  BorderColor #B8860B
+}
+skinparam activity {
+  BackgroundColor #FFF9DB
+  BorderColor #B8860B
+  DiamondBackgroundColor #FFFFFF
+  DiamondBorderColor #555555
+}
+skinparam sequence {
+  ParticipantBackgroundColor #FFF9DB
+  ParticipantBorderColor #B8860B
+  LifeLineBorderColor #888888
+  LifeLineBackgroundColor #FFF3B0
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #777777
+}
+skinparam class {
+  BackgroundColor #FFF9DB
+  BorderColor #B8860B
+}
+skinparam note {
+  BackgroundColor #EEF5FF
+  BorderColor #7A9CC6
+}

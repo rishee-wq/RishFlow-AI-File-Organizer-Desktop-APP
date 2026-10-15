@@ -6,43 +6,30 @@ interface ProgressBarProps {
   className?: string;
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  color?: string;
 }
 
-export function ProgressBar({ 
-  value, 
-  max = 100, 
-  className = '', 
-  showLabel = false,
-  size = 'md' 
-}: ProgressBarProps) {
-  const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
-  
-  const sizeStyles = {
-    sm: 'h-1.5',
-    md: 'h-2.5',
-    lg: 'h-3',
-  };
-
-  const getColor = () => {
-    if (percentage >= 80) return 'bg-green-500';
-    if (percentage >= 60) return 'bg-blue-500';
-    if (percentage >= 40) return 'bg-yellow-500';
-    return 'bg-orange-500';
-  };
+/** A liquid fill: gradient body with a moving highlight. */
+export function ProgressBar({ value, max = 100, className = '', showLabel = false, size = 'md', color }: ProgressBarProps) {
+  const pct = Math.min(Math.max((value / max) * 100, 0), 100);
+  const heights = { sm: 'h-1.5', md: 'h-2', lg: 'h-3' };
+  const fill = color ?? 'var(--primary)';
 
   return (
     <div className={`w-full ${className}`}>
-      <div className={`w-full bg-secondary rounded-full overflow-hidden ${sizeStyles[size]}`}>
+      <div className={`relative w-full overflow-hidden rounded-full bg-secondary ${heights[size]}`}>
         <div
-          className={`${getColor()} ${sizeStyles[size]} rounded-full transition-all duration-300`}
-          style={{ width: `${percentage}%` }}
-        />
+          className="relative h-full overflow-hidden rounded-full transition-[width] duration-700 ease-out"
+          style={{
+            width: `${pct}%`,
+            background: `linear-gradient(90deg, color-mix(in srgb, ${fill} 55%, transparent), ${fill})`,
+            boxShadow: `0 0 12px -2px ${fill}`,
+          }}
+        >
+          <span className="animate-sheen absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+        </div>
       </div>
-      {showLabel && (
-        <span className="text-xs text-muted-foreground mt-1 block">
-          {percentage.toFixed(0)}%
-        </span>
-      )}
+      {showLabel && <span className="mt-1 block text-xs text-muted-foreground">{pct.toFixed(0)}%</span>}
     </div>
   );
 }

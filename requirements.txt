@@ -1,13 +1,12 @@
-PyQt5>=5.15.9
-pywebview>=4.0
-opencv-python>=4.8.0
-pytesseract>=0.3.10
+pywebview>=5.0
+pywebview[qt]>=5.0; sys_platform == "linux"  # Linux renders through Qt WebEngine
+pystray>=0.19
+opencv-python-headless>=4.8.0  # headless: no GUI/libGL dependency, works on every OS
+pytesseract>=0.3.10  # optional OCR; needs the Tesseract program installed separately
 Pillow>=11.0.0
 numpy>=2.0.0
-google-api-python-client>=2.100.0
-google-auth-httplib2>=0.1.0
-google-auth-oauthlib>=1.1.0
-pypdf>=3.10.0  # optional: used by lightweight AI indexer to extract text from PDFs
+ImageHash>=4.3
+pypdf>=3.10.0  # reads PDF text for AI search and document sorting
 # Optional (advanced AI/RAG features):
 # langchain>=0.0.195
 # chromadb>=0.3.30

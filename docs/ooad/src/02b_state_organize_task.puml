@@ -1,0 +1,43 @@
+@startuml 02b_state_organize_task
+!include _style.iuml
+title RishFlow – State Machine: File Organization Task
+
+[*] --> Idle
+Idle : entry / last_operations = []
+
+Idle --> Validating : start_organizing(source, dest, mode)
+Validating : do / check source exists, create dest if needed
+
+Validating --> Failed : [source missing OR\ncannot create dest]
+Validating --> Organizing : [paths valid] / spawn background thread,\nlog "Started organizing"
+
+state Organizing {
+  [*] --> ReadingNextFile
+  ReadingNextFile --> Classifying : [file found] (skip directories)
+  ReadingNextFile --> [*] : [no more files]
+
+  Classifying : do / decide folder by sort mode\n(Extension | Date | Size | Name | AI)
+  Classifying --> Moving : folder decided
+  Classifying --> Moving : [AI error] / fallback by extension
+
+  Moving : do / makedirs + shutil.move
+  Moving --> Recording : [move ok] / files_moved++
+  Moving --> ReadingNextFile : [move failed] / files_skipped++, log error
+
+  Recording : do / append op, persist last_ops.json,\nlog activity
+  Recording --> ReadingNextFile
+}
+
+Organizing --> Completed : all files processed /\nlog summary, notify UI (onOrganizeComplete)
+Organizing --> Failed : unexpected exception / log error
+
+Completed --> Reverting : revert_last()
+Completed --> Idle : start new task
+
+Reverting : do / move files back (reverse order),\nremove empty folders
+Reverting --> Reverted : ops undone / clear last_ops.json
+Reverted --> Idle
+
+Failed --> Idle : user retries
+Completed --> [*]
+@enduml

@@ -1,595 +1,560 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion, useInView } from 'motion/react';
 import {
-  Upload,
-  FileText,
-  Image,
-  FileSpreadsheet,
-  Music,
-  Video,
-  File,
-  Filter,
-  ArrowUpDown,
-  CheckSquare,
-  Square,
-  Eye,
-  Trash2,
-  Loader,
-  FolderOpen,
   ArrowRight,
-  FolderPlus,
-  X,
-  CheckCircle,
+  ArrowUpDown,
+  Check,
+  CheckCircle2,
   AlertCircle,
-  HardDrive
+  FolderInput,
+  FolderOpen,
+  LayoutGrid,
+  List,
+  Loader2,
+  Waves,
+  X,
 } from 'lucide-react';
-import { Card, CardHeader, CardContent, CardTitle } from './Card';
-import { Button } from './Button';
-import { Badge } from './Badge';
-import { Tag } from './Tag';
-import { ProgressBar } from './ProgressBar';
+import { toast } from 'sonner';
 import { pythonAPI } from '@/api/pywebview';
 import { useData } from '@/app/contexts/DataContext';
+import { useTypewriter } from '../hooks/useTypewriter';
+import { useVideoScrub } from '../hooks/useVideoScrub';
+import {
+  SORT_MODES,
+  baseName,
+  formatFileSize,
+  getColorForFile,
+  getIconForFile,
+  getTypeForFile,
+  statFiles,
+  statSize,
+  type FolderStats,
+  type SortModeId,
+} from '../lib/files';
+import { Card } from './Card';
+import { Badge } from './Badge';
+import { Button } from './Button';
 import { FileGrid, FileItem } from './FileGrid';
+import { VideoBackdrop } from './fx/VideoBackdrop';
+
+const HERO_VIDEO =
+  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260601_110537_3a579fa0-7bbc-4d94-9d25-0e816c7840f5.mp4';
 
 interface FileOrganizerProps {
   onPreviewFile: (file: FileItem) => void;
 }
 
+type SortKey = 'name' | 'type' | 'size';
+
 export function FileOrganizer({ onPreviewFile }: FileOrganizerProps) {
-  const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [rawSizes, setRawSizes] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState<'source' | 'dest' | null>(null);
   const [sourceFolder, setSourceFolder] = useState<string | null>(null);
   const [destFolder, setDestFolder] = useState<string | null>(null);
-  const [selectedSortMode, setSelectedSortMode] = useState('File Extension');
-  const [folderStats, setFolderStats] = useState<{ source: any; dest: any }>({ source: null, dest: null });
-  const [organizationStarted, setOrganizationStarted] = useState(false);
+  const [sortMode, setSortMode] = useState<SortModeId>('AI-based Content');
+  const [folderStats, setFolderStats] = useState<{ source: FolderStats | null; dest: FolderStats | null }>({ source: null, dest: null });
+  const [organizing, setOrganizing] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [sortKey, setSortKey] = useState<SortKey>('name');
   const { selectedSourceFolder, setSelectedSourceFolder, selectedDestFolder, setSelectedDestFolder, categories, refreshData } = useData();
 
-  // Sync local state with global state on mount
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useVideoScrub(videoRef);
+  // The floating dock only appears once the inline "Ready" banner scrolls away
+  const strategyRef = useRef<HTMLElement>(null);
+  const strategyInView = useInView(strategyRef);
+  const { displayed, done } = useTypewriter("Drop the chaos.\nWe'll find the flow.", 38, 600);
+
+  // Default strategy chosen during onboarding
   useEffect(() => {
+    if (!pythonAPI.available) return;
+    pythonAPI
+      .loadState('default_sort_mode')
+      .then((m) => {
+        if (m?.value && SORT_MODES.some((x) => x.id === m.value)) setSortMode(m.value);
+      })
+      .catch(() => {});
+  }, []);
+
+  const scanSource = async (folder: string) => {
+    const [stats, result] = await Promise.all([pythonAPI.getFolderStats(folder), pythonAPI.scanSource(folder)]);
+    setFolderStats((prev) => ({ ...prev, source: stats && !stats.error ? stats : null }));
+    if (result?.files && Array.isArray(result.files)) {
+      const sizes: Record<string, number> = {};
+      const scanned: FileItem[] = result.files.map((f: any, idx: number) => {
+        const id = `file_${idx}_${Date.now()}`;
+        sizes[id] = f.size || 0;
+        return {
+          id,
+          name: f.name,
+          type: getTypeForFile(f.name),
+          size: formatFileSize(f.size || 0),
+          category: 'Uncategorized',
+          confidence: 75,
+          tags: [getTypeForFile(f.name).toLowerCase()],
+          icon: getIconForFile(f.name),
+          color: getColorForFile(f.name),
+          path: f.path,
+        };
+      });
+      setRawSizes(sizes);
+      setFiles(scanned);
+      setSelectedFiles(new Set());
+    }
+  };
+
+  // Sync with global state on mount
+  useEffect(() => {
+    if (!pythonAPI.available) return;
     if (selectedSourceFolder && !sourceFolder) {
       setSourceFolder(selectedSourceFolder);
-      // fetch stats...
-      pythonAPI.getFolderStats(selectedSourceFolder).then(stats => {
-        setFolderStats(prev => ({ ...prev, source: stats }));
-      });
-      // scan files...
-      pythonAPI.scanSource(selectedSourceFolder).then(result => {
-        if (result.files && Array.isArray(result.files)) {
-          const scannedFiles: FileItem[] = result.files.map((f: any, idx: number) => ({
-            id: `file_${idx}_${Date.now()}`,
-            name: f.name,
-            type: getTypeForFile(f.name),
-            size: formatFileSize(f.size || 0),
-            category: 'Uncategorized',
-            confidence: 75,
-            tags: [getTypeForFile(f.name).toLowerCase()],
-            icon: getIconForFile(f.name),
-            color: getColorForFile(f.name),
-            path: f.path,
-          }));
-          setFiles(scannedFiles);
-        }
-      });
+      scanSource(selectedSourceFolder).catch(() => {});
     }
     if (selectedDestFolder && !destFolder) {
       setDestFolder(selectedDestFolder);
-      pythonAPI.getFolderStats(selectedDestFolder).then(stats => {
-        setFolderStats(prev => ({ ...prev, dest: stats }));
-      });
+      pythonAPI
+        .getFolderStats(selectedDestFolder)
+        .then((stats) => setFolderStats((prev) => ({ ...prev, dest: stats && !stats.error ? stats : null })))
+        .catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSourceFolder, selectedDestFolder]);
 
-  const getColorForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    const colors: Record<string, string> = {
-      pdf: '#3b82f6',
-      doc: '#8b5cf6',
-      docx: '#8b5cf6',
-      jpg: '#ec4899',
-      jpeg: '#ec4899',
-      png: '#ec4899',
-      gif: '#ec4899',
-      xlsx: '#10b981',
-      xls: '#10b981',
-      mp3: '#f59e0b',
-      mp4: '#06b6d4',
-      avi: '#06b6d4',
-    };
-    return colors[ext] || '#6b7280';
+  const ensureApi = () => {
+    if (pythonAPI.available) return true;
+    toast.info('The folder picker opens in the RishFlow desktop app.');
+    return false;
   };
 
-  const getTypeForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['pdf'].includes(ext)) return 'PDF';
-    if (['doc', 'docx', 'txt'].includes(ext)) return 'Document';
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return 'Image';
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return 'Spreadsheet';
-    if (['mp3', 'wav', 'flac'].includes(ext)) return 'Audio';
-    if (['mp4', 'avi', 'mov'].includes(ext)) return 'Video';
-    return 'File';
-  };
-
-  const getIconForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['pdf'].includes(ext)) return FileText;
-    if (['doc', 'docx', 'txt'].includes(ext)) return FileText;
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return Image;
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return FileSpreadsheet;
-    if (['mp3', 'wav', 'flac'].includes(ext)) return Music;
-    if (['mp4', 'avi', 'mov'].includes(ext)) return Video;
-    return File;
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + ' ' + sizes[i];
-  };
-
-  const handleBrowseFiles = async () => {
+  const handleBrowseSource = async () => {
+    if (!ensureApi()) return;
     try {
-      setLoading(true);
-      console.log('Browsing folder...');
+      setLoading('source');
       const folder = await pythonAPI.browseFolder('Select Folder to Organize');
-      console.log('Selected folder:', folder);
-
-      if (folder && typeof folder === 'string') {
-        setSourceFolder(folder);
-        setSelectedSourceFolder(folder);
-
-        // Get folder stats
-        const stats = await pythonAPI.getFolderStats(folder);
-        setFolderStats(prev => ({ ...prev, source: stats }));
-
-        // Scan the folder for files
-        const result = await pythonAPI.scanSource(folder);
-
-        if (result.files && Array.isArray(result.files)) {
-          const scannedFiles: FileItem[] = result.files.map((f: any, idx: number) => ({
-            id: `file_${idx}_${Date.now()}`,
-            name: f.name,
-            type: getTypeForFile(f.name),
-            size: formatFileSize(f.size || 0),
-            category: 'Uncategorized',
-            confidence: 75,
-            tags: [getTypeForFile(f.name).toLowerCase()],
-            icon: getIconForFile(f.name),
-            color: getColorForFile(f.name),
-            path: f.path,
-          }));
-
-          setFiles(scannedFiles);
-          setSelectedFiles(new Set());
-        }
-      } else {
-        console.warn('Folder selection cancelled or failed', folder);
-      }
+      setSourceFolder(folder);
+      setSelectedSourceFolder(folder);
+      await scanSource(folder);
     } catch (error) {
-      console.error('Error browsing folder:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      alert(`Error selecting folder: ${errorMessage}`);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg !== 'No folder selected') toast.error('Could not select folder', { description: msg });
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
-  const handleSetDestination = async () => {
+  const handleBrowseDest = async () => {
+    if (!ensureApi()) return;
     try {
+      setLoading('dest');
       const folder = await pythonAPI.browseFolder('Select Destination Folder');
-
-      if (folder && typeof folder === 'string') {
-        setDestFolder(folder);
-        setSelectedDestFolder(folder);
-        const stats = await pythonAPI.getFolderStats(folder);
-        setFolderStats(prev => ({ ...prev, dest: stats }));
-      }
+      setDestFolder(folder);
+      setSelectedDestFolder(folder);
+      const stats = await pythonAPI.getFolderStats(folder);
+      setFolderStats((prev) => ({ ...prev, dest: stats && !stats.error ? stats : null }));
     } catch (error) {
-      console.error('Error selecting destination:', error);
-      alert('Error selecting destination folder. Please try again.');
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg !== 'No folder selected') toast.error('Could not select destination', { description: msg });
+    } finally {
+      setLoading(null);
     }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    // Handle file drop
   };
 
   const toggleFileSelection = (fileId: string) => {
-    const newSelection = new Set(selectedFiles);
-    if (newSelection.has(fileId)) {
-      newSelection.delete(fileId);
-    } else {
-      newSelection.add(fileId);
-    }
-    setSelectedFiles(newSelection);
+    const next = new Set(selectedFiles);
+    if (next.has(fileId)) next.delete(fileId);
+    else next.add(fileId);
+    setSelectedFiles(next);
   };
 
   const toggleSelectAll = () => {
-    if (selectedFiles.size === files.length) {
-      setSelectedFiles(new Set());
-    } else {
-      setSelectedFiles(new Set(files.map(f => f.id)));
-    }
+    setSelectedFiles(selectedFiles.size === files.length ? new Set() : new Set(files.map((f) => f.id)));
+  };
+
+  const sortedFiles = useMemo(() => {
+    const copy = [...files];
+    if (sortKey === 'name') copy.sort((a, b) => a.name.localeCompare(b.name));
+    if (sortKey === 'type') copy.sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+    if (sortKey === 'size') copy.sort((a, b) => (rawSizes[b.id] ?? 0) - (rawSizes[a.id] ?? 0));
+    return copy;
+  }, [files, sortKey, rawSizes]);
+
+  /** Live "n of total" toast until the run ends; the completion summary comes from DataContext. */
+  const trackProgress = (modeLabel: string) => {
+    const id = toast.loading(`Organizing by ${modeLabel}…`, { description: 'Preparing files' });
+    const timer = window.setInterval(async () => {
+      try {
+        const s = await pythonAPI.getOrganizeStatus();
+        if (s.in_progress) {
+          toast.loading(`Organizing by ${modeLabel}…`, {
+            id,
+            description: s.total ? `${s.done} of ${s.total} files` : 'Preparing files',
+          });
+          return;
+        }
+      } catch {
+        /* stop polling below */
+      }
+      window.clearInterval(timer);
+      toast.dismiss(id);
+    }, 400);
   };
 
   const handleOrganizeNow = async () => {
     if (!sourceFolder) {
-      alert('Please select a source folder first');
+      toast.warning('Choose a source folder first');
       return;
     }
-
     if (!destFolder) {
-      alert('Please select a destination folder first');
+      toast.warning('Choose a destination folder first');
       return;
     }
-
     try {
-      setLoading(true);
-      setOrganizationStarted(true);
-
-      const result = await pythonAPI.startOrganizing(
-        sourceFolder,
-        destFolder || sourceFolder, // Default to source if no dest
-        selectedSortMode,
-        categories // Pass user categories for AI matching
-      );
-
-      if (result.status === 'organizing') {
-        alert('File organization started!');
+      setOrganizing(true);
+      const result = await pythonAPI.startOrganizing(sourceFolder, destFolder, sortMode, categories);
+      if (result?.error) throw new Error(result.error);
+      if (result?.status === 'organizing') {
+        trackProgress(SORT_MODES.find((m) => m.id === sortMode)?.label ?? sortMode);
         setFiles([]);
         setSourceFolder(null);
-        setDestFolder(null);
         setSelectedFiles(new Set());
-        setOrganizationStarted(false);
-
-        // Refresh data after a delay
-        setTimeout(() => {
-          refreshData();
-        }, 2000);
+        setFolderStats((prev) => ({ ...prev, source: null }));
       }
     } catch (error) {
-      console.error('Error organizing files:', error);
-      alert('Error organizing files. Please try again.');
-      setOrganizationStarted(false);
+      toast.error('Could not start organizing', { description: error instanceof Error ? error.message : String(error) });
     } finally {
-      setLoading(false);
+      setOrganizing(false);
     }
   };
 
+  const mode = SORT_MODES.find((m) => m.id === sortMode)!;
+  const ready = !!sourceFolder && !!destFolder && files.length > 0;
+
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl mb-2 text-foreground">Organize Files</h1>
-        <p className="text-muted-foreground">
-          Select source and destination folders, then let AI automatically sort and categorize your files
-        </p>
-      </div>
-
-      {/* Folder Selection Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-        {/* Source Folder */}
-        <Card className={`transition-all border-2 ${sourceFolder ? 'border-green-500/30 bg-green-500/5' : 'border-border hover:border-primary/50'}`}>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <FolderOpen className="w-4 h-4 text-blue-500" />
-                  Source Folder
-                </label>
-                {sourceFolder && (
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                )}
-              </div>
-
-              {sourceFolder ? (
-                <div className="space-y-3">
-                  <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                    <p className="text-xs text-muted-foreground mb-1">Path:</p>
-                    <p className="text-sm font-medium text-foreground truncate" title={sourceFolder}>
-                      {sourceFolder}
-                    </p>
-                  </div>
-
-                  {folderStats.source && (
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2 bg-blue-500/10 rounded border border-blue-500/20">
-                        <p className="text-muted-foreground">Files</p>
-                        <p className="font-semibold text-foreground">{folderStats.source.file_count || files.length}</p>
-                      </div>
-                      <div className="p-2 bg-purple-500/10 rounded border border-purple-500/20">
-                        <p className="text-muted-foreground">Size</p>
-                        <p className="font-semibold text-foreground">{folderStats.source.total_size_mb || 'N/A'}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    onClick={handleBrowseFiles}
-                    disabled={loading}
-                  >
-                    Change Folder
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full text-destructive hover:text-destructive"
-                    onClick={() => {
-                      setSourceFolder(null);
-                      setFiles([]);
-                      setFolderStats(prev => ({ ...prev, source: null }));
-                    }}
-                  >
-                    <X className="w-3 h-3 mr-2" />
-                    Clear
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  onClick={handleBrowseFiles}
-                  disabled={loading}
-                  className="w-full"
-                >
-                  {loading ? (
-                    <>
-                      <Loader className="w-4 h-4 mr-2 animate-spin" />
-                      Browsing...
-                    </>
-                  ) : (
-                    <>
-                      <FolderOpen className="w-4 h-4 mr-2" />
-                      Select Source
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Arrow */}
-        <div className="flex justify-center mb-0">
-          <div className="p-3 rounded-lg bg-muted/50 border border-border">
-            <ArrowRight className="w-5 h-5 text-muted-foreground" />
-          </div>
+    <div className="space-y-8">
+      {/* ─────────── Hero (light, scrubbable) ─────────── */}
+      <section className="relative flex flex-col overflow-hidden rounded-[28px] bg-[#f1f0f5] text-neutral-900 shadow-2xl lg:block lg:min-h-[480px]">
+        <div className="pointer-events-none relative order-last aspect-video w-full overflow-hidden md:aspect-[21/9] lg:absolute lg:inset-0 lg:aspect-auto lg:h-full">
+          <VideoBackdrop
+            ref={videoRef}
+            src={HERO_VIDEO}
+            muted
+            playsInline
+            preload="auto"
+            fallback="linear-gradient(120deg, #f1f0f5 0%, #e7e5f0 50%, #dfe9f2 100%)"
+            videoClassName="object-right lg:object-right-bottom"
+          />
         </div>
 
-        {/* Destination Folder */}
-        <Card className={`transition-all border-2 ${destFolder ? 'border-purple-500/30 bg-purple-500/5' : 'border-border hover:border-primary/50'}`}>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <FolderPlus className="w-4 h-4 text-purple-500" />
-                  Destination Folder
-                </label>
-                {destFolder && (
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                )}
-              </div>
+        <div className="relative z-10 order-first flex w-full flex-col px-6 py-10 sm:px-10 lg:max-w-[58%] lg:py-12">
+          <p className="mb-6 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-neutral-500">
+            <Waves className="h-3.5 w-3.5" /> Organize · Move your mouse to stir the water
+          </p>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>
+            <h1 className="mb-6 w-full select-none whitespace-pre-wrap text-4xl font-normal leading-[1.08] tracking-tight text-black md:text-5xl xl:text-[64px]">
+              {displayed}
+              {!done && <span className="ml-[2px] inline-block h-[1.1em] w-[2px] animate-blink bg-black align-middle" />}
+            </h1>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.1 }}>
+            <p className="mb-8 max-w-xl text-base leading-relaxed text-neutral-600 md:text-lg">
+              Choose where your files live and where order should land.
+              <br className="hidden md:block" /> RishFlow sorts the rest — and every move can be undone.
+            </p>
+          </motion.div>
 
-              {destFolder ? (
-                <div className="space-y-3">
-                  <div className="p-3 bg-muted/50 rounded-lg border border-border">
-                    <p className="text-xs text-muted-foreground mb-1">Path:</p>
-                    <p className="text-sm font-medium text-foreground truncate" title={destFolder}>
-                      {destFolder}
-                    </p>
-                  </div>
+          {/* Route: source → destination */}
+          <motion.div
+            className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr]"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.2 }}
+          >
+            <FolderStation
+              label="Source"
+              icon={FolderOpen}
+              path={sourceFolder}
+              stats={folderStats.source}
+              fallbackCount={files.length}
+              loading={loading === 'source'}
+              onPick={handleBrowseSource}
+              onClear={() => {
+                setSourceFolder(null);
+                setFiles([]);
+                setFolderStats((prev) => ({ ...prev, source: null }));
+              }}
+            />
+            <div className="hidden items-center justify-center sm:flex">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-black text-white shadow-lg">
+                <ArrowRight className="h-4 w-4" />
+              </span>
+            </div>
+            <FolderStation
+              label="Destination"
+              icon={FolderInput}
+              path={destFolder}
+              stats={folderStats.dest}
+              loading={loading === 'dest'}
+              onPick={handleBrowseDest}
+              onClear={() => {
+                setDestFolder(null);
+                setFolderStats((prev) => ({ ...prev, dest: null }));
+              }}
+            />
+          </motion.div>
+        </div>
+      </section>
 
-                  {folderStats.dest && (
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2 bg-blue-500/10 rounded border border-blue-500/20">
-                        <p className="text-muted-foreground">Files</p>
-                        <p className="font-semibold text-foreground">{folderStats.dest.file_count || 0}</p>
-                      </div>
-                      <div className="p-2 bg-purple-500/10 rounded border border-purple-500/20">
-                        <p className="text-muted-foreground">Size</p>
-                        <p className="font-semibold text-foreground">{folderStats.dest.total_size_mb || 'N/A'}</p>
-                      </div>
-                    </div>
+      {/* ─────────── Strategy pills ─────────── */}
+      <section ref={strategyRef}>
+        <h2 className="mb-1 text-2xl font-medium tracking-tight">How should we sort?</h2>
+        <p className="mb-6 text-sm text-muted-foreground">Pick one strategy — you can change it before every run.</p>
+        <div className="flex flex-wrap gap-2.5">
+          {SORT_MODES.map((m) => {
+            const active = sortMode === m.id;
+            return (
+              <motion.button
+                key={m.id}
+                layout
+                onClick={() => setSortMode(m.id)}
+                whileTap={{ scale: 0.96 }}
+                className={`flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors ${
+                  active
+                    ? 'bg-primary text-primary-foreground shadow-[0_10px_30px_-12px_var(--glow)]'
+                    : 'glass text-foreground hover:border-border-strong hover:bg-accent/50'
+                }`}
+              >
+                <AnimatePresence initial={false}>
+                  {active && (
+                    <motion.span
+                      initial={{ scale: 0, width: 0 }}
+                      animate={{ scale: 1, width: 'auto' }}
+                      exit={{ scale: 0, width: 0 }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                      className="flex"
+                    >
+                      <Check className="h-4 w-4" strokeWidth={3} />
+                    </motion.span>
                   )}
+                </AnimatePresence>
+                {m.label}
+              </motion.button>
+            );
+          })}
+        </div>
 
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full"
-                    onClick={handleSetDestination}
+        <div className="mt-5">
+          <AnimatePresence mode="wait">
+            {!ready ? (
+              <motion.p
+                key="hint"
+                className="text-xs italic"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+              >
+                {!sourceFolder
+                  ? 'Choose a source folder above to begin.'
+                  : !destFolder
+                    ? 'Now choose where the organized files should land.'
+                    : 'This folder has no files to organize.'}
+              </motion.p>
+            ) : (
+              <motion.div
+                key="banner"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                className="overflow-hidden"
+              >
+                <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="text-sm text-foreground">
+                      Ready to organize <span className="font-semibold">{files.length} files</span> by{' '}
+                      <span className="font-semibold text-primary">{mode.label}</span> into{' '}
+                      <span className="font-semibold">{baseName(destFolder!)}</span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{mode.hint}</p>
+                  </div>
+                  <button
+                    onClick={handleOrganizeNow}
+                    disabled={organizing}
+                    className="group flex shrink-0 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary disabled:opacity-50"
                   >
-                    Change Folder
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full text-destructive hover:text-destructive"
-                    onClick={() => {
-                      setDestFolder(null);
-                      setFolderStats(prev => ({ ...prev, dest: null }));
-                    }}
-                  >
-                    <X className="w-3 h-3 mr-2" />
-                    Clear
-                  </Button>
+                    {organizing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Let's Go
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                  </button>
                 </div>
-              ) : (
-                <Button
-                  onClick={handleSetDestination}
-                  className="w-full"
-                  disabled={!sourceFolder}
-                >
-                  <FolderPlus className="w-4 h-4 mr-2" />
-                  Select Destination
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </section>
 
-      {/* Sort Mode Selection and Quick Actions */}
-      {sourceFolder && files.length > 0 && (
-        <Card className="border-l-4 border-l-primary">
-          <CardHeader>
-            <CardTitle className="text-base">Organization Settings</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm font-semibold text-foreground mb-2 block">Organization Strategy</label>
-                <select
-                  value={selectedSortMode}
-                  onChange={(e) => setSelectedSortMode(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-input-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option>File Extension</option>
-                  <option>File Name</option>
-                  <option>Date Modified</option>
-                  <option>Size Category</option>
-                  <option>AI-based Content</option>
-                </select>
-                <p className="text-xs text-muted-foreground mt-1">Choose how files will be organized</p>
-              </div>
-
-              <div>
-                <label className="text-sm font-semibold text-foreground mb-2 block">Files Ready</label>
-                <div className="p-2 bg-green-500/10 rounded-lg border border-green-500/20 flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground">{files.length} files</span>
-                  <CheckCircle className="w-4 h-4 text-green-500" />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* File List/Grid */}
+      {/* ─────────── Files ─────────── */}
       {files.length > 0 && (
-        <Card className="mb-20"> {/* Add margin bottom for sticky footer */}
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CardTitle>Files to Organize ({files.length})</CardTitle>
-                {selectedFiles.size > 0 && (
-                  <Badge variant="info">{selectedFiles.size} selected</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="flex bg-muted/50 rounded-lg p-1 mr-2">
+        <Card className="mb-24">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-6 pb-4">
+            <div className="flex items-center gap-3">
+              <h3 className="text-base font-semibold tracking-tight">Files to organize</h3>
+              <Badge variant="default">{files.length}</Badge>
+              {selectedFiles.size > 0 && <Badge variant="info">{selectedFiles.size} selected</Badge>}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSortKey((k) => (k === 'name' ? 'type' : k === 'type' ? 'size' : 'name'))}
+              >
+                <ArrowUpDown className="h-4 w-4" />
+                By {sortKey}
+              </Button>
+              <div className="flex rounded-xl bg-secondary/70 p-1">
+                {(['list', 'grid'] as const).map((m) => (
                   <button
-                    onClick={() => setViewMode('list')}
-                    className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    key={m}
+                    onClick={() => setViewMode(m)}
+                    className="relative flex h-8 w-8 items-center justify-center rounded-lg"
+                    title={m === 'list' ? 'List view' : 'Grid view'}
                   >
-                    <Filter className="w-4 h-4" />
+                    {viewMode === m && (
+                      <motion.span layoutId="view-toggle" className="absolute inset-0 rounded-lg bg-background shadow-sm" />
+                    )}
+                    {m === 'list' ? (
+                      <List className={`relative h-4 w-4 ${viewMode === m ? 'text-primary' : 'text-muted-foreground'}`} />
+                    ) : (
+                      <LayoutGrid className={`relative h-4 w-4 ${viewMode === m ? 'text-primary' : 'text-muted-foreground'}`} />
+                    )}
                   </button>
-                  <button
-                    onClick={() => setViewMode('grid')}
-                    className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-background shadow-sm text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    <Eye className="w-4 h-4" />
-                  </button>
-                </div>
-                <Button variant="ghost" size="sm">
-                  <ArrowUpDown className="w-4 h-4 mr-2" />
-                  Sort
-                </Button>
-                {selectedFiles.size > 0 && (
-                  <>
-                    <Button variant="secondary" size="sm">
-                      Organize Selected
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
+                ))}
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="p-3 pt-0 sm:p-6 sm:pt-0">
             <FileGrid
-              files={files}
+              files={sortedFiles}
               viewMode={viewMode}
               selectedFiles={selectedFiles}
               onToggleSelection={toggleFileSelection}
               onToggleSelectAll={toggleSelectAll}
               onPreviewFile={onPreviewFile}
             />
-          </CardContent>
+          </div>
         </Card>
       )}
 
-      {/* Sticky Organize Button */}
-      {files.length > 0 && (
-        <div className="sticky bottom-4 z-20 mx-auto max-w-2xl shadow-lg rounded-xl overflow-hidden animate-in slide-in-from-bottom-5">
-          <div className="bg-card/90 backdrop-blur-md border border-primary/20 p-4 flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <p className="text-sm font-medium text-foreground">
-                {selectedFiles.size > 0
-                  ? `${selectedFiles.size} of ${files.length} files selected`
-                  : `${files.length} files ready to organize`}
-              </p>
-              <div className="flex items-center gap-2 text-xs">
+      {/* ─────────── Floating action dock ─────────── */}
+      <AnimatePresence>
+        {files.length > 0 && !strategyInView && (
+          <motion.div
+            className="sticky bottom-6 z-20 mx-auto max-w-3xl"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+          >
+            <div className="glass-strong edge-light flex items-center justify-between gap-6 rounded-2xl border-border-strong p-4 pl-6 shadow-[0_30px_80px_-30px_var(--glow)]">
+              <div className="min-w-0 space-y-0.5">
+                <p className="truncate text-sm font-medium">
+                  {selectedFiles.size > 0
+                    ? `${selectedFiles.size} of ${files.length} files selected`
+                    : `${files.length} files ready · by ${mode.label}`}
+                </p>
                 {sourceFolder && destFolder ? (
-                  <span className="text-green-500 flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" />
-                    Ready to start
+                  <span className="flex items-center gap-1 text-xs text-success">
+                    <CheckCircle2 className="h-3 w-3" /> Ready to start
                   </span>
                 ) : (
-                  <span className="text-amber-500 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    Missing details
+                  <span className="flex items-center gap-1 text-xs text-warning">
+                    <AlertCircle className="h-3 w-3" /> Choose a destination folder
                   </span>
                 )}
               </div>
+              <Button size="lg" onClick={handleOrganizeNow} disabled={organizing || !sourceFolder || !destFolder}>
+                {organizing ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" /> Starting…
+                  </>
+                ) : (
+                  <>
+                    <Waves className="h-5 w-5" /> Organize Now
+                  </>
+                )}
+              </Button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
-            <Button
-              size="lg"
-              onClick={handleOrganizeNow}
-              disabled={loading || !sourceFolder || !destFolder || organizationStarted}
-              className="gap-2 shadow-md hover:shadow-lg transition-all"
-            >
-              {organizationStarted ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Organizing...
-                </>
-              ) : loading ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  Preparing...
-                </>
-              ) : (
-                <>
-                  <FileText className="w-5 h-5" />
-                  Organize Now
-                </>
-              )}
-            </Button>
-          </div>
+function FolderStation({
+  label,
+  icon: Icon,
+  path,
+  stats,
+  fallbackCount,
+  loading,
+  onPick,
+  onClear,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  path: string | null;
+  stats: FolderStats | null;
+  fallbackCount?: number;
+  loading: boolean;
+  onPick: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div
+      className={`group relative min-w-0 rounded-2xl border p-4 backdrop-blur-md transition-all ${
+        path ? 'border-black/10 bg-white/80 shadow-lg shadow-black/5' : 'border-dashed border-black/15 bg-white/45 hover:bg-white/70'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+            path ? 'bg-black text-white' : 'bg-black/5 text-neutral-600'
+          }`}
+        >
+          {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-500">{label}</p>
+          <p className="truncate text-sm font-medium text-neutral-900" title={path ?? undefined}>
+            {path ? baseName(path) : 'Not chosen yet'}
+          </p>
+          {path && (
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {statFiles(stats, fallbackCount)} files · {statSize(stats)}
+            </p>
+          )}
         </div>
-      )}
+        {path && (
+          <button
+            onClick={onClear}
+            className="rounded-full p-1 text-neutral-400 opacity-0 transition-all hover:bg-black/5 hover:text-neutral-700 group-hover:opacity-100"
+            title="Clear"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      <button
+        onClick={onPick}
+        disabled={loading}
+        className={`mt-3 w-full rounded-xl py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+          path ? 'bg-black/5 text-neutral-800 hover:bg-black/10' : 'bg-black text-white hover:bg-neutral-800'
+        }`}
+      >
+        {path ? 'Change folder' : `Choose ${label.toLowerCase()}`}
+      </button>
     </div>
   );
 }

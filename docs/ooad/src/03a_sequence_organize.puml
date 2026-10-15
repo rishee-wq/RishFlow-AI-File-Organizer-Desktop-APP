@@ -1,0 +1,67 @@
+@startuml 03a_sequence_organize
+!include _style.iuml
+title RishFlow – Sequence Diagram: Organize Files (AI-based Content mode)
+autonumber
+
+actor User
+participant "FileOrganizer\n(React UI)" as UI
+participant "RishFlowAPI\n(pywebview bridge)" as API
+participant "Organizer Thread" as T
+participant "AISmartSorter" as AI
+participant "File System" as FS
+database "ActivityDB\n(SQLite)" as DB
+
+User -> UI : select source & destination folders
+UI -> API : browse_folder(title)
+API -> FS : open native folder dialog
+FS --> API : selected path
+API --> UI : path
+
+User -> UI : choose "AI-based Content" + click Organize
+UI -> API : start_organizing(source, dest, mode, categories)
+activate API
+API -> FS : exists(source)? / makedirs(dest)
+alt source missing
+  API --> UI : {error: "Source folder does not exist"}
+else valid
+  API -> T ** : create & start(daemon)
+  API -> DB : log_activity("Started organizing", in_progress)
+  API --> UI : {status: "organizing"}
+end
+deactivate API
+UI --> User : show progress
+
+activate T
+T -> FS : listdir(source)
+FS --> T : file list
+loop for each file (skip directories)
+  T -> AI : classify_file(path)
+  activate AI
+  alt image
+    AI -> AI : classify_image()\n(face / screenshot / receipt / meme)
+  else document
+    AI -> AI : classify_document() (OCR keywords)
+  else code / other
+    AI -> AI : classify_code() / classify_generic()
+  end
+  AI --> T : category path (e.g. "Images/Screenshots")
+  deactivate AI
+  opt top category matches user category
+    T -> T : folder = top-level category
+  end
+  T -> FS : makedirs(dest/folder)
+  T -> FS : shutil.move(file, dest/folder)
+  alt move ok
+    T -> FS : write last_ops.json (for undo)
+    T -> DB : log("Moved to <folder>", success)
+  else move failed
+    T -> DB : log("Failed to move", error)
+  end
+end
+T -> DB : log("Organization complete: N moved, M skipped")
+T -> UI : evaluate_js(onOrganizeComplete(source))
+deactivate T
+UI -> API : scan_source(source) / get_logs()
+API --> UI : refreshed files & logs
+UI --> User : show results
+@enduml

@@ -1,0 +1,29 @@
+@startuml 02c_state_ai_index
+!include _style.iuml
+title RishFlow – State Machine: AI Search Index
+
+[*] --> NotIndexed
+
+NotIndexed --> Indexing : start_index_for_ai(folder) [valid folder]
+NotIndexed --> NotIndexed : start_index_for_ai [invalid folder] / return error
+
+state Indexing {
+  [*] --> CollectingFiles
+  CollectingFiles : do / walk folder for text & PDF files
+  CollectingFiles --> Extracting
+  Extracting : do / parallel text extraction (4 workers)
+  Extracting --> Extracting : file done [cache hit OR extracted] / done++
+  Extracting --> [*] : [done == total]
+}
+
+Indexing --> Indexing : start_index_for_ai [same folder] / return "already_indexing"
+Indexing --> Indexed : index complete / in_progress = false
+Indexing --> IndexError : exception / return error
+
+Indexed --> Querying : query_ai(folder, query)
+Querying : do / substring search, build snippets
+Querying --> Indexed : results returned
+Indexed --> Indexing : folder content changed / re-index
+
+IndexError --> NotIndexed : retry
+@enduml

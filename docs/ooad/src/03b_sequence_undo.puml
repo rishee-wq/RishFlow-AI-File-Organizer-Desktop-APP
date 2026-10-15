@@ -1,0 +1,44 @@
+@startuml 03b_sequence_undo
+!include _style.iuml
+title RishFlow – Sequence Diagram: Undo Last Organization
+autonumber
+
+actor User
+participant "React UI" as UI
+participant "RishFlowAPI" as API
+participant "File System" as FS
+database "ActivityDB\n(SQLite)" as DB
+
+User -> UI : click "Undo"
+UI -> API : revert_last()
+activate API
+API -> API : copy last_operations (with lock)
+opt no operations in memory
+  API -> FS : read last_ops.json
+  FS --> API : saved operations
+end
+alt no operations
+  API --> UI : {status: "no_ops"}
+  UI --> User : "Nothing to undo"
+else operations exist
+  loop for each (dest, orig) in reverse order
+    API -> FS : exists(dest)?
+    alt file exists
+      API -> FS : makedirs(dirname(orig))
+      API -> FS : shutil.move(dest, orig)
+      API -> DB : log("Reverted move", success)
+    else move error
+      API -> DB : log("Revert failed", error)
+    end
+  end
+  loop for each touched folder
+    API -> FS : remove folder if empty
+    API -> DB : log("Cleanup", removed_empty_folder)
+  end
+  API -> API : last_operations = []
+  API -> UI : evaluate_js(onRevertComplete())
+  API --> UI : {status: "reverted", count}
+  UI --> User : "N files restored"
+end
+deactivate API
+@enduml

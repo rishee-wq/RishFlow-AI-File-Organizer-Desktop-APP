@@ -23,11 +23,23 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Personal app data written when running from source (paths and file names of your files)
+rishflow_activity.db
+state.json
+last_ops.json
+debug_log.txt
+.ai_cache/
+
+# Generated
+graphify-out/
+assets/rishflow-512.png
+
 # PyInstaller (your .exe builds)
 *.manifest
 *.spec
 dist/
 build/
+release/
 
 # VS Code / IDEs
 .vscode/
@@ -55,8 +67,9 @@ env/
 secrets.json
 
 # ML / Data
-*.pkl  # Models (add .gitkeep if needed)
-dataset/  # Custom training data
+# Models and custom training data
+*.pkl
+dataset/
 rishflow_model.pkl
 logs/
 .cache/

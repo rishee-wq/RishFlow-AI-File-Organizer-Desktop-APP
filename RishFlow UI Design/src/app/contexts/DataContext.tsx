@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { toast } from 'sonner';
 import { pythonAPI } from '../../api/pywebview';
+import { getColorForFile, getTypeForFile, formatFileSize, baseName } from '../lib/files';
 
 export interface FileItem {
   id: string;
@@ -31,6 +33,8 @@ export interface ActivityItem {
   confidence: number;
   timestamp: string;
   date: string;
+  time: number;
+  status: string;
   color: string;
 }
 
@@ -51,10 +55,24 @@ interface DataContextType {
     totalFiles: number;
     totalCategories: number;
     avgConfidence: number;
+    sortedToday: number;
+    lastActivity: number | null;
   };
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+const DEFAULT_CATEGORIES: Category[] = [
+  { id: '1', name: 'Documents', fileCount: 0, color: '#38bdf8', icon: '📄', lastModified: 'just now' },
+  { id: '2', name: 'Audio', fileCount: 0, color: '#fbbf24', icon: '🎵', lastModified: 'just now' },
+];
+
+declare global {
+  interface Window {
+    onOrganizeComplete?: (source: string, summary?: { moved: number; skipped: number; failed: number }) => void;
+    onRevertComplete?: () => void;
+  }
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -64,156 +82,122 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [selectedSourceFolder, _setSelectedSourceFolder] = useState<string | null>(null);
   const [selectedDestFolder, _setSelectedDestFolder] = useState<string | null>(null);
 
+  // User-created categories survive periodic rescans (and app restarts).
+  const customCategories = useRef<Category[]>([]);
+  const hiddenCategories = useRef<Set<string>>(new Set());
+  const destRef = useRef<string | null>(null);
+
+  const persistCustom = () => {
+    if (pythonAPI.available) {
+      pythonAPI
+        .saveState('user_categories', {
+          custom: customCategories.current,
+          hidden: Array.from(hiddenCategories.current),
+        })
+        .catch(() => {});
+    }
+  };
+
   const setSelectedSourceFolder = (path: string | null) => {
     _setSelectedSourceFolder(path);
-    if (path) {
-      pythonAPI.saveState('last_source_folder', path);
-    }
+    if (path && pythonAPI.available) pythonAPI.saveState('last_source_folder', path).catch(() => {});
   };
 
   const setSelectedDestFolder = (path: string | null) => {
     _setSelectedDestFolder(path);
+    destRef.current = path;
     if (path) {
-      pythonAPI.saveState('last_dest_folder', path);
+      if (pythonAPI.available) pythonAPI.saveState('last_dest_folder', path).catch(() => {});
       refreshData(path);
     }
-  };
-
-  const defaultCategories: Category[] = [
-    { id: '1', name: 'Documents', fileCount: 0, color: '#3b82f6', icon: '📄', lastModified: 'just now' },
-    { id: '2', name: 'Audio', fileCount: 0, color: '#f59e0b', icon: '🎵', lastModified: 'just now' },
-  ];
-
-  const getColorForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    const colors: Record<string, string> = {
-      pdf: '#3b82f6',
-      doc: '#8b5cf6',
-      docx: '#8b5cf6',
-      jpg: '#ec4899',
-      jpeg: '#ec4899',
-      png: '#ec4899',
-      gif: '#ec4899',
-      xlsx: '#10b981',
-      xls: '#10b981',
-      mp3: '#f59e0b',
-      mp4: '#06b6d4',
-      avi: '#06b6d4',
-    };
-    return colors[ext] || '#6b7280';
-  };
-
-  const getTypeForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['pdf'].includes(ext)) return 'PDF';
-    if (['doc', 'docx', 'txt'].includes(ext)) return 'Document';
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return 'Image';
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return 'Spreadsheet';
-    if (['mp3', 'wav', 'flac'].includes(ext)) return 'Audio';
-    if (['mp4', 'avi', 'mov'].includes(ext)) return 'Video';
-    return 'File';
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round((bytes / Math.pow(k, i)) * 10) / 10 + ' ' + sizes[i];
   };
 
   const refreshData = async (overrideDest?: string) => {
     try {
       setLoading(true);
+      await pythonAPI.initialize();
+      if (!pythonAPI.available) return;
 
-      // Load persisted state if not already set
       if (!selectedSourceFolder) {
         const savedSource = await pythonAPI.loadState('last_source_folder');
-        if (savedSource && savedSource.value) {
-          setSelectedSourceFolder(savedSource.value);
-        }
+        if (savedSource?.value) _setSelectedSourceFolder(savedSource.value);
       }
 
-      let destFolder = overrideDest || selectedDestFolder;
+      let destFolder = overrideDest || destRef.current;
       if (!destFolder) {
         const savedDest = await pythonAPI.loadState('last_dest_folder');
-        if (savedDest && savedDest.value) {
+        if (savedDest?.value) {
           destFolder = savedDest.value;
-          // Only update state if we didn't have an override (avoids loop if called from setter)
-          if (!overrideDest) setSelectedDestFolder(destFolder);
+          destRef.current = destFolder;
+          _setSelectedDestFolder(destFolder);
         }
       }
 
-      // 1. Get Activity Logs (keep this for the Activity Log UI)
+      // 1. Activity log
       const logs = await pythonAPI.getLogs();
-      const activitiesArray: ActivityItem[] = [];
-
       if (Array.isArray(logs)) {
+        const items: ActivityItem[] = [];
         logs.forEach((log: any, index: number) => {
           if (log.action.includes('Moved to') || log.action.includes('Failed') || log.action.includes('Reverted')) {
-            const fileName = log.source_file ? log.source_file.split(/[/\\]/).pop() : 'Unknown';
-            activitiesArray.push({
+            const fileName = log.source_file ? baseName(log.source_file) : 'Unknown';
+            const when = new Date(log.timestamp);
+            items.push({
               id: `activity_${index}`,
-              fileName: fileName,
+              fileName,
               fromPath: log.source_file || '',
               toPath: log.destination || '',
               category: log.action.replace('Moved to ', '').trim(),
               confidence: 85,
-              timestamp: new Date(log.timestamp).toLocaleTimeString(),
-              date: new Date(log.timestamp).toLocaleDateString(),
+              timestamp: when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              date: when.toLocaleDateString(),
+              time: when.getTime(),
+              status: log.status || 'success',
               color: getColorForFile(fileName),
             });
           }
         });
-        setActivities(activitiesArray.slice(0, 500));
+        setActivities(items.slice(0, 500));
       }
 
-      // 2. Get Real File State from Destination Folder
+      // 2. Real file state from the destination folder
       const filesMap = new Map<string, FileItem>();
       const categoriesMap = new Map<string, Category>();
 
-      // Initialize with default categories (with 0 count)
-      defaultCategories.forEach(cat => {
-        categoriesMap.set(cat.name, { ...cat, fileCount: 0 });
+      [...DEFAULT_CATEGORIES, ...customCategories.current].forEach((cat) => {
+        if (!hiddenCategories.current.has(cat.name)) categoriesMap.set(cat.name, { ...cat, fileCount: 0 });
       });
 
       if (destFolder) {
-        console.log('[DataContext] Scanning destination:', destFolder);
         const scanResult = await pythonAPI.scanOrganizedFiles(destFolder);
-        console.log('[DataContext] Scan result:', scanResult);
-
-        if (scanResult && scanResult.files) {
+        if (scanResult?.files) {
           scanResult.files.forEach((f: any, index: number) => {
             const fileId = `file_${f.name}_${index}`;
             const categoryName = f.category || 'Uncategorized';
 
-            // Add file
             filesMap.set(fileId, {
               id: fileId,
               name: f.name,
-              type: f.type === 'file' ? getTypeForFile(f.name) : (f.type.charAt(0).toUpperCase() + f.type.slice(1)),
+              type: f.type === 'file' ? getTypeForFile(f.name) : f.type.charAt(0).toUpperCase() + f.type.slice(1),
               size: formatFileSize(f.size),
               category: categoryName,
-              confidence: 100, // Real file exists
+              confidence: 100,
               tags: [categoryName.toLowerCase()],
               color: getColorForFile(f.name),
-              path: f.path
+              path: f.path,
             });
 
-            // Update Category - RESET count first to avoid accumulation
-            if (!categoriesMap.has(categoryName)) {
-              console.log('[DataContext] Creating new category:', categoryName);
+            const existing = categoriesMap.get(categoryName);
+            if (existing) {
+              existing.fileCount += 1;
+            } else if (!hiddenCategories.current.has(categoryName)) {
               categoriesMap.set(categoryName, {
                 id: `cat_${categoryName}`,
                 name: categoryName,
                 fileCount: 1,
                 color: getColorForFile(f.name),
                 icon: '📁',
-                lastModified: new Date(f.modified * 1000).toLocaleTimeString()
+                lastModified: new Date(f.modified * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               });
-            } else {
-              const cat = categoriesMap.get(categoryName)!;
-              cat.fileCount += 1;
             }
           });
         }
@@ -221,55 +205,105 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       setFiles(Array.from(filesMap.values()));
       setCategories(Array.from(categoriesMap.values()));
-
     } catch (error) {
       console.error('Failed to load data:', error);
-      // Don't wipe everything on error, maybe just stop loading
     } finally {
       setLoading(false);
     }
   };
 
   const addCategory = (name: string, color: string, icon: string = '📁') => {
-    const newCategory: Category = {
-      id: `cat_${Date.now()}`,
-      name,
-      fileCount: 0,
-      color,
-      icon,
-      lastModified: 'just now',
-    };
-    setCategories([...categories, newCategory]);
+    const cat: Category = { id: `cat_${Date.now()}`, name, fileCount: 0, color, icon, lastModified: 'just now' };
+    customCategories.current = [...customCategories.current.filter((c) => c.name !== name), cat];
+    hiddenCategories.current.delete(name);
+    setCategories((prev) => [...prev.filter((c) => c.name !== name), cat]);
+    persistCustom();
   };
 
   const updateCategory = (id: string, name: string, color: string, icon: string) => {
-    setCategories(
-      categories.map(cat =>
-        cat.id === id ? { ...cat, name, color, icon, lastModified: 'just now' } : cat
-      )
-    );
+    setCategories((prev) => {
+      const next = prev.map((cat) => (cat.id === id ? { ...cat, name, color, icon, lastModified: 'just now' } : cat));
+      const updated = next.find((c) => c.id === id);
+      const original = prev.find((c) => c.id === id);
+      if (updated) {
+        if (original && original.name !== name) hiddenCategories.current.add(original.name);
+        customCategories.current = [
+          ...customCategories.current.filter((c) => c.id !== id && c.name !== original?.name),
+          { ...updated, fileCount: 0 },
+        ];
+        persistCustom();
+      }
+      return next;
+    });
   };
 
   const deleteCategory = (id: string) => {
-    setCategories(categories.filter(cat => cat.id !== id));
+    setCategories((prev) => {
+      const target = prev.find((c) => c.id === id);
+      if (target) {
+        customCategories.current = customCategories.current.filter((c) => c.id !== id);
+        hiddenCategories.current.add(target.name);
+        persistCustom();
+      }
+      return prev.filter((cat) => cat.id !== id);
+    });
   };
 
+  const todayKey = new Date().toLocaleDateString();
+  const activityTimes = activities.map((a) => a.time).filter((t) => !Number.isNaN(t));
   const stats = {
     totalFiles: files.length,
     totalCategories: categories.length,
-    avgConfidence: files.length > 0
-      ? Math.round(files.reduce((sum, f) => sum + f.confidence, 0) / files.length)
-      : 0,
+    avgConfidence: files.length > 0 ? Math.round(files.reduce((sum, f) => sum + f.confidence, 0) / files.length) : 0,
+    sortedToday: activities.filter((a) => a.date === todayKey && a.status !== 'error').length,
+    lastActivity: activityTimes.length ? Math.max(...activityTimes) : null,
   };
 
-  // Refresh data on mount and periodically
   useEffect(() => {
-    refreshData();
-    // Increase interval to 30 seconds to reduce redundant scans
-    const interval = setInterval(refreshData, 30000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+
+    // Load persisted custom categories before the first scan
+    pythonAPI
+      .initialize()
+      .then(() => (pythonAPI.available ? pythonAPI.loadState('user_categories') : null))
+      .then((res) => {
+        const v = res?.value;
+        if (v && !cancelled) {
+          customCategories.current = Array.isArray(v.custom) ? v.custom : [];
+          hiddenCategories.current = new Set(Array.isArray(v.hidden) ? v.hidden : []);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) refreshData();
+      });
+
+    // Python calls these via evaluate_js when background work finishes
+    window.onOrganizeComplete = (_source, summary) => {
+      const moved = summary?.moved ?? 0;
+      const left = (summary?.skipped ?? 0) + (summary?.failed ?? 0);
+      toast.success('Organization complete', {
+        description: `${moved} file${moved === 1 ? '' : 's'} moved${left ? ` · ${left} left in place` : ''}.`,
+      });
+      if (summary?.failed) {
+        toast.warning(`${summary.failed} file${summary.failed === 1 ? '' : 's'} couldn't be moved`, {
+          description: 'They may be open in another app. Details are in Activity Logs.',
+        });
+      }
+      refreshData();
+    };
+    // The undo button that triggers a revert reports the result itself
+    window.onRevertComplete = () => refreshData();
+
+    const interval = setInterval(() => refreshData(), 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      delete window.onOrganizeComplete;
+      delete window.onRevertComplete;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, []);
 
   return (
     <DataContext.Provider

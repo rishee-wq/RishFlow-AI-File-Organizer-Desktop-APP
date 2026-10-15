@@ -1,0 +1,63 @@
+@startuml 01_use_case
+!include _style.iuml
+title RishFlow – Use Case Diagram
+left to right direction
+skinparam nodesep 18
+skinparam ranksep 70
+
+actor "User" as User
+actor "AI Smart Sorter\n(OpenCV + OCR)" as AI <<system>>
+actor "Local File System" as FS <<system>>
+
+rectangle "RishFlow – AI File Organizer" {
+  usecase "Login / Continue as Guest" as UC_Login
+  usecase "Complete Onboarding" as UC_Onboard
+  usecase "Configure Settings\n(theme, notifications)" as UC_Set
+  usecase "Run in System Tray" as UC_Tray
+  usecase "Scan & Preview Files" as UC_Scan
+  usecase "View Folder Statistics" as UC_Stats
+  usecase "Organize Files" as UC_Org
+  usecase "Manage Custom Categories" as UC_Cat
+  usecase "Undo Last Organization" as UC_Undo
+  usecase "Find Duplicate Files" as UC_Dup
+  usecase "Search Files (AI Query)" as UC_Query
+  usecase "View Activity Log" as UC_Log
+
+  usecase "Select Source Folder" as UC_Src
+  usecase "Select Destination Folder" as UC_Dest
+  usecase "Sort by AI-based Content" as UC_AI
+  usecase "Sort by Extension / Date /\nSize / File Name" as UC_Rule
+  usecase "Record Activity" as UC_Record
+  usecase "Index Files for AI Search" as UC_Index
+  usecase "Clear Activity Log" as UC_Clear
+}
+
+User -- UC_Login
+User -- UC_Onboard
+User -- UC_Set
+User -- UC_Tray
+User -- UC_Scan
+User -- UC_Stats
+User -- UC_Org
+User -- UC_Cat
+User -- UC_Undo
+User -- UC_Dup
+User -- UC_Query
+User -- UC_Log
+
+UC_Org ..> UC_Src : <<include>>
+UC_Org ..> UC_Dest : <<include>>
+UC_Org ..> UC_Record : <<include>>
+UC_Undo ..> UC_Record : <<include>>
+UC_Query ..> UC_Index : <<include>>
+UC_Log <.. UC_Clear : <<extend>>
+UC_Cat ..> UC_AI : <<extend>>
+UC_Org <|-- UC_AI
+UC_Org <|-- UC_Rule
+
+UC_AI --- AI
+UC_Src --- FS
+UC_Dup ---- FS
+UC_Undo ---- FS
+UC_Index --- FS
+@enduml

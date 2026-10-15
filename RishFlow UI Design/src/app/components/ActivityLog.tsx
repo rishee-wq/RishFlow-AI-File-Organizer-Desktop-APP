@@ -1,226 +1,280 @@
-import React, { useState } from 'react';
-import {
-  ArrowRight,
-  Undo2,
-  FileText,
-  Image,
-  FileSpreadsheet,
-  Music,
-  Video,
-  Calendar,
-  Filter,
-  File
-} from 'lucide-react';
-import { Card, CardHeader, CardContent, CardTitle } from './Card';
-import { Button } from './Button';
-import { Badge } from './Badge';
-import { ProgressBar } from './ProgressBar';
-import { useData } from '@/app/contexts/DataContext';
+import React, { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { ArrowRight, Undo2, Search, History, Loader2, ShieldCheck, Inbox } from 'lucide-react';
+import { toast } from 'sonner';
+import { useData, type ActivityItem } from '@/app/contexts/DataContext';
 import { pythonAPI } from '@/api/pywebview';
+import { getIconForFile, baseName, parentName } from '../lib/files';
+import { Card } from './Card';
+import { Badge } from './Badge';
+import { Button } from './Button';
+import { Input } from './Input';
+import { useConfirm } from './Modal';
+import { PageHeader } from './PageHeader';
 
-export function ActivityLog() {
-  const [filter, setFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
-  const { activities, stats, refreshData } = useData();
+type Range = 'all' | 'today' | 'week' | 'month';
+const RANGES: Array<{ id: Range; label: string }> = [
+  { id: 'all', label: 'All time' },
+  { id: 'today', label: 'Today' },
+  { id: 'week', label: '7 days' },
+  { id: 'month', label: '30 days' },
+];
+const PAGE = 40;
 
-  const getIconForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['pdf'].includes(ext)) return FileText;
-    if (['doc', 'docx', 'txt'].includes(ext)) return FileText;
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return Image;
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return FileSpreadsheet;
-    if (['mp3', 'wav', 'flac'].includes(ext)) return Music;
-    if (['mp4', 'avi', 'mov'].includes(ext)) return Video;
-    return File;
+interface ActivityLogProps {
+  mode?: 'activity' | 'undo';
+}
+
+export function ActivityLog({ mode = 'activity' }: ActivityLogProps) {
+  const [range, setRange] = useState<Range>('all');
+  const [query, setQuery] = useState('');
+  const [limit, setLimit] = useState(PAGE);
+  const [undoing, setUndoing] = useState(false);
+  const { activities, refreshData } = useData();
+  const confirm = useConfirm();
+
+  const now = Date.now();
+  const todayKey = new Date().toLocaleDateString();
+  const inRange = (a: ActivityItem, r: Range) => {
+    if (r === 'all') return true;
+    if (r === 'today') return a.date === todayKey;
+    const days = r === 'week' ? 7 : 30;
+    return now - a.time <= days * 86400000;
   };
 
-  // Group activity by date
-  const groupedActivities = activities.reduce((acc: Record<string, any[]>, activity: any) => {
-    if (!acc[activity.date]) {
-      acc[activity.date] = [];
-    }
-    acc[activity.date].push(activity);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const filtered = useMemo(
+    () =>
+      activities.filter(
+        (a) => inRange(a, range) && (!query || a.fileName.toLowerCase().includes(query.toLowerCase()) || a.category.toLowerCase().includes(query.toLowerCase())),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activities, range, query],
+  );
 
-  const totalActivities = activities.length;
-  const todayActivities = activities.filter((a: any) => a.date === new Date().toLocaleDateString()).length;
+  const visible = filtered.slice(0, limit);
+  const grouped = visible.reduce<Record<string, ActivityItem[]>>((acc, a) => {
+    (acc[a.date] ||= []).push(a);
+    return acc;
+  }, {});
+
+  const failed = activities.filter((a) => a.status === 'error' || a.category.startsWith('Failed')).length;
+  const stats = [
+    { label: 'Total actions', value: activities.length },
+    { label: 'Today', value: activities.filter((a) => inRange(a, 'today')).length },
+    { label: 'Last 7 days', value: activities.filter((a) => inRange(a, 'week')).length },
+    { label: 'Success rate', value: activities.length ? `${Math.round(((activities.length - failed) / activities.length) * 100)}%` : '—' },
+  ];
+
+  const undoLast = async () => {
+    const ok = await confirm({
+      title: 'Undo the last run?',
+      description: 'Files from the most recent organization are moved back to their original locations.',
+      confirmLabel: 'Undo run',
+      destructive: true,
+    });
+    if (!ok) return;
+    if (!pythonAPI.available) {
+      toast.info('Undo runs in the RishFlow desktop app.');
+      return;
+    }
+    try {
+      setUndoing(true);
+      const res = await pythonAPI.revertLast();
+      if (res?.error) throw new Error(res.error);
+      if (res?.status === 'no_ops') {
+        toast.info('Nothing to undo', { description: 'Only the most recent run in this session can be reverted.' });
+      } else {
+        toast.success('Undo complete', { description: `${res?.count ?? 0} files are back where they started.` });
+      }
+      await refreshData();
+    } catch (error) {
+      toast.error('Undo failed', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setUndoing(false);
+    }
+  };
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl mb-2 text-foreground">Activity Logs</h1>
-          <p className="text-muted-foreground">
-            Track all file organization actions and their history
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary">
-            <Filter className="w-4 h-4 mr-2" />
-            Filter
-          </Button>
-          <Button variant="secondary">
-            <Calendar className="w-4 h-4 mr-2" />
-            Date Range
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow={mode === 'undo' ? 'Safety net' : 'History'}
+        title={mode === 'undo' ? 'Undo Actions' : 'Activity Logs'}
+        subtitle={
+          mode === 'undo'
+            ? 'Changed your mind? Send the last run back upstream.'
+            : 'Every move RishFlow made, in the order it happened.'
+        }
+      />
+
+      {mode === 'undo' && (
+        <Card className="overflow-hidden">
+          <div className="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-primary/20 blur-3xl" />
+          <div className="relative flex flex-wrap items-center gap-6 p-6 sm:p-8">
+            <span className="relative flex h-16 w-16 items-center justify-center">
+              <span className="animate-ripple absolute inset-0 rounded-full border border-primary/40" />
+              <span className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                <History className="h-7 w-7" />
+              </span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg font-semibold tracking-tight">Revert the most recent organization</h3>
+              <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+                RishFlow remembers the last run while the app is open. Undo moves those files back and tidies up any
+                folders left empty.
+              </p>
+              <p className="mt-2 flex items-center gap-1.5 text-xs text-success">
+                <ShieldCheck className="h-3.5 w-3.5" /> Nothing is deleted — files are only moved.
+              </p>
+            </div>
+            <Button variant="destructive" size="lg" onClick={undoLast} disabled={undoing}>
+              {undoing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Undo2 className="h-5 w-5" />}
+              Undo last run
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Actions', value: totalActivities.toString(), change: '+0%' },
-          { label: 'Today', value: todayActivities.toString(), change: '+0%' },
-          { label: 'This Week', value: activities.length.toString(), change: '+0%' },
-          { label: 'Accuracy', value: stats.avgConfidence + '%', change: '0%' },
-        ].map((stat, idx) => (
-          <Card key={idx}>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
-              <div className="flex items-end justify-between">
-                <p className="text-2xl font-semibold text-foreground">{stat.value}</p>
-                <Badge variant="success" className="text-xs">
-                  {stat.change}
-                </Badge>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {stats.map((s, i) => (
+          <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.06 }}>
+            <Card className="h-full">
+              <div className="p-5">
+                <p className="text-xs font-medium text-muted-foreground">{s.label}</p>
+                <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{s.value}</p>
               </div>
-            </CardContent>
-          </Card>
+            </Card>
+          </motion.div>
         ))}
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="glass flex rounded-full p-1">
+          {RANGES.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => {
+                setRange(r.id);
+                setLimit(PAGE);
+              }}
+              className={`relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                range === r.id ? 'text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {range === r.id && (
+                <motion.span layoutId="range-pill" className="absolute inset-0 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 400, damping: 32 }} />
+              )}
+              <span className="relative">{r.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="w-full max-w-xs">
+          <Input icon={<Search className="h-4 w-4" />} placeholder="Filter by file or category…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+      </div>
+
       {/* Timeline */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {activities.length === 0 ? (
-            <div className="text-center py-12">
-              <File className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-              <p className="text-muted-foreground">No activities yet. Start organizing files to see activity logs.</p>
+      <Card className={mode === 'activity' ? 'mb-20' : ''}>
+        <div className="p-4 sm:p-6">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center py-14 text-center">
+              <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm text-muted-foreground">
+                {activities.length === 0 ? 'No activity yet. Organize a folder to see every move here.' : 'Nothing matches these filters.'}
+              </p>
             </div>
           ) : (
             <div className="space-y-8">
-              {Object.entries(groupedActivities).map(([date, items]) => (
+              {Object.entries(grouped).map(([date, items]) => (
                 <div key={date}>
-                  {/* Date Header */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="flex-shrink-0 w-2 h-2 rounded-full bg-primary" />
-                    <h3 className="text-sm font-semibold text-foreground">{date}</h3>
-                    <div className="flex-1 h-px bg-border" />
+                  <div className="sticky top-0 z-[1] -mx-2 mb-3 flex items-center gap-3 px-2 py-1">
+                    <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_10px_var(--primary)]" />
+                    <h3 className="text-sm font-semibold">{date === todayKey ? 'Today' : date}</h3>
+                    <span className="text-xs text-muted-foreground">{items.length}</span>
+                    <span className="h-px flex-1 bg-border" />
                   </div>
 
-                  {/* Activity Items */}
-                  <div className="space-y-3 ml-5">
-                    {(items as any[]).map((activity: any) => {
-                      const Icon = getIconForFile(activity.fileName);
-
+                  <ol className="relative ml-1 space-y-2 border-l border-border pl-6">
+                    {items.map((a, i) => {
+                      const Icon = getIconForFile(a.fileName);
+                      const isFail = a.status === 'error' || a.category.startsWith('Failed');
                       return (
-                        <div
-                          key={activity.id}
-                          className="relative pl-6 pb-3 border-l-2 border-border last:border-l-0 last:pb-0"
+                        <motion.li
+                          key={a.id}
+                          initial={{ opacity: 0, x: -8 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: Math.min(i, 15) * 0.03 }}
+                          className="relative"
                         >
-                          {/* Timeline Dot */}
-                          <div
-                            className="absolute left-[-5px] top-2 w-2 h-2 rounded-full border-2 border-background"
-                            style={{ backgroundColor: activity.color }}
+                          <span
+                            className="absolute -left-[29px] top-5 h-2.5 w-2.5 rounded-full ring-4 ring-background"
+                            style={{ background: isFail ? 'var(--destructive)' : a.color }}
                           />
-
-                          {/* Content */}
-                          <div className="bg-card rounded-lg border border-border p-4 hover:border-primary/30 transition-colors">
-                            <div className="flex items-start justify-between mb-3">
-                              <div className="flex items-start gap-3 flex-1 min-w-0">
-                                {/* Icon */}
-                                <div
-                                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                                  style={{ backgroundColor: `${activity.color}15` }}
-                                >
-                                  <Icon className="w-5 h-5" style={{ color: activity.color }} />
-                                </div>
-
-                                {/* File Info */}
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-foreground mb-1 truncate">
-                                    {activity.fileName}
-                                  </p>
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <span className="truncate">{activity.fromPath}</span>
-                                    <ArrowRight className="w-4 h-4 flex-shrink-0" />
-                                    <span className="truncate">{activity.toPath}</span>
-                                  </div>
-                                </div>
+                          <div className="flex items-center gap-4 rounded-xl border border-transparent p-3 transition-colors hover:border-border hover:bg-accent/30">
+                            <span
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                              style={{ backgroundColor: `${a.color}1f`, color: a.color }}
+                            >
+                              <Icon className="h-5 w-5" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium" title={a.fileName}>
+                                {a.fileName}
+                              </p>
+                              <div className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className="truncate" title={a.fromPath}>
+                                  {parentName(a.fromPath) || '—'}
+                                </span>
+                                <ArrowRight className="h-3 w-3 shrink-0" />
+                                <span className="truncate" title={a.toPath}>
+                                  {baseName(a.toPath) || '—'}
+                                </span>
                               </div>
-
-                              {/* Time */}
-                              <span className="text-xs text-muted-foreground flex-shrink-0 ml-4">
-                                {activity.timestamp}
-                              </span>
                             </div>
-
-                            {/* Meta Info */}
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <Badge variant="info">{activity.category}</Badge>
-                                <div className="flex items-center gap-2">
-                                  <ProgressBar value={activity.confidence} size="sm" className="w-20" />
-                                  <span className="text-xs text-muted-foreground">
-                                    {activity.confidence}%
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Undo Button */}
-                              <Button variant="ghost" size="sm">
-                                <Undo2 className="w-4 h-4 mr-1" />
-                                Undo
-                              </Button>
-                            </div>
+                            <Badge variant={isFail ? 'error' : a.category.startsWith('Reverted') ? 'warning' : 'info'} className="hidden max-w-[30%] sm:inline-flex">
+                              {a.category}
+                            </Badge>
+                            <span className="w-14 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{a.timestamp}</span>
                           </div>
-                        </div>
+                        </motion.li>
                       );
                     })}
-                  </div>
+                  </ol>
                 </div>
               ))}
             </div>
           )}
 
-          {/* Load More */}
-          {activities.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-border text-center">
-              <Button variant="secondary">
-                Load More Activity
+          {filtered.length > limit && (
+            <div className="mt-6 border-t border-border pt-6 text-center">
+              <Button variant="secondary" onClick={() => setLimit((l) => l + PAGE)}>
+                Load more · {filtered.length - limit} remaining
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
-      {/* Sticky Undo Button */}
-      {activities.length > 0 && (
-        <div className="sticky bottom-4 z-20 mx-auto max-w-md shadow-lg rounded-xl overflow-hidden animate-in slide-in-from-bottom-5">
-          <Button
-            variant="destructive"
-            size="lg"
-            className="w-full gap-2 shadow-md hover:shadow-lg transition-all"
-            onClick={async () => {
-              if (confirm('Are you sure you want to undo the last organization action? This will move files back to their original locations.')) {
-                try {
-                  await pythonAPI.revertLast();
-                  await refreshData();
-                  // Optional: Show success toast
-                } catch (error) {
-                  console.error('Undo failed:', error);
-                  alert('Failed to undo last action');
-                }
-              }
-            }}
-          >
-            <Undo2 className="w-5 h-5" />
-            Undo Last Action
-          </Button>
         </div>
-      )}
+      </Card>
+
+      <AnimatePresence>
+        {mode === 'activity' && activities.length > 0 && (
+          <motion.div
+            className="sticky bottom-6 z-20 mx-auto w-fit"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 30 }}
+          >
+            <button
+              onClick={undoLast}
+              disabled={undoing}
+              className="glass-strong edge-light flex items-center gap-2.5 rounded-full border-destructive/30 px-6 py-3.5 text-sm font-medium text-destructive transition-all hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+            >
+              {undoing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+              Undo last run
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

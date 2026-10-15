@@ -1,0 +1,57 @@
+@startuml 04b_activity_ai_classify
+!include _style.iuml
+!pragma useVerticalIf on
+title RishFlow – Activity Diagram: AI Smart Classification of a File
+
+start
+:Receive file path;
+:Read file extension;
+switch (File type?)
+case (Image)
+  :Load image with OpenCV;
+  if (Image readable?) then (no)
+    :Category = Images/Others;
+  else (yes)
+    :Convert to grayscale;
+    if (Faces detected?\n(Haar cascades)) then (yes)
+      :Category = Images/Family;
+    elseif (Edge density > 0.08?) then (yes)
+      :Category = Images/Screenshots;
+    elseif (Text density > 0.15?) then (yes)
+      :Category = Images/Receipts/<date>;
+    elseif (Colorful AND text > 0.05?) then (yes)
+      :Category = Images/Memes;
+    else (no)
+      :Category = Images/Photos;
+    endif
+  endif
+case (Document)
+  :Run OCR (pytesseract);
+  if (Contains invoice / receipt /\nbill / payment?) then (yes)
+    :Extract date;
+    :Category = Documents/Receipts/<date>;
+  elseif (Contains report / proposal / project?) then (yes)
+    :Category = Documents/Reports;
+  elseif (Contains resume / cv?) then (yes)
+    :Category = Documents/Resume;
+  else (no)
+    :Category = Documents/<parent folder>;
+  endif
+case (Code)
+  :Read first 2 KB;
+  :Detect programming language;
+  :Category = Code/<language>;
+case (Video / Audio / Archive / Executable)
+  :Category = Videos / Audio /\nArchives / Executables;
+case (Other)
+  if (Size > 100 MB?) then (yes)
+    :Category = Large_Files;
+  elseif (Older than 365 days?) then (yes)
+    :Category = Old_Files;
+  else (no)
+    :Category = generic;
+  endif
+endswitch
+:Return category path;
+stop
+@enduml

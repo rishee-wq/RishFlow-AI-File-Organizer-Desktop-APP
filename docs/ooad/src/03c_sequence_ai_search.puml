@@ -1,0 +1,53 @@
+@startuml 03c_sequence_ai_search
+!include _style.iuml
+title RishFlow – Sequence Diagram: AI Search (Index + Query)
+autonumber
+
+actor User
+participant "AISearch\n(React UI)" as UI
+participant "RishFlowAPI" as API
+participant "Indexer Thread" as IDX
+participant "File System" as FS
+collections ".ai_cache" as Cache
+
+User -> UI : open AI Search, choose folder
+UI -> API : start_index_for_ai(folder)
+activate API
+alt already indexing same folder
+  API --> UI : {status: "already_indexing", done, total}
+else
+  create IDX
+  API -> IDX : start thread index_for_ai(folder)
+  activate IDX
+  API --> UI : {status: "started"}
+end
+deactivate API
+
+IDX -> FS : os.walk(folder) – collect .txt/.md/.pdf…
+loop each candidate file (ThreadPoolExecutor, 4 workers)
+    IDX -> Cache : lookup sha256(path) cache
+    alt cache hit & mtime same
+      Cache --> IDX : cached text
+    else
+      IDX -> FS : read text / extract PDF pages (≤20)
+      IDX -> Cache : save extracted text
+    end
+    IDX -> IDX : done++
+end
+IDX -> IDX : _ai_index = items, in_progress = false
+deactivate IDX
+
+loop until indexing finished
+  UI -> API : get_ai_index_status()
+  API --> UI : {in_progress, done, total}
+end
+
+User -> UI : type query "invoice 2024"
+UI -> API : query_ai(folder, query)
+activate API
+API -> API : match query in indexed text & names
+API -> FS : walk folder for filename matches
+API --> UI : {results[name, path, snippet], indexed_files}
+deactivate API
+UI --> User : show ranked results with snippets
+@enduml

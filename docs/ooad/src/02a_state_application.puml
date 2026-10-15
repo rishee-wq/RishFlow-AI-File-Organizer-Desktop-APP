@@ -1,0 +1,44 @@
+@startuml 02a_state_application
+!include _style.iuml
+title RishFlow – State Machine: Application Lifecycle
+
+[*] --> Splash : launch app
+Splash : entry / start pywebview window & tray icon
+Splash : do / load saved state (state.json)
+
+Splash --> Welcome : splash done [not logged in]
+Splash --> Main : splash done [session restored]
+
+Welcome : do / show Login screen
+Welcome --> Onboarding : login / guest [first run]
+Welcome --> Main : login [profile exists]
+
+Onboarding : do / collect profile, workspace, focus types
+Onboarding --> Main : finish / save_state(user_profile)
+
+state "Main Application" as Main {
+  [*] --> Dashboard
+  state Dashboard
+  state FileOrganizer
+  state Categories
+  state AISearch
+  state ActivityLog
+  state Settings
+
+  Dashboard --> FileOrganizer : select "Organizer"
+  Dashboard --> Categories : select "Categories"
+  Dashboard --> AISearch : select "AI Search"
+  Dashboard --> ActivityLog : select "Activity"
+  Dashboard --> Settings : select "Settings"
+  FileOrganizer --> Dashboard : select "Dashboard"
+  Categories --> Dashboard : select "Dashboard"
+  AISearch --> Dashboard : select "Dashboard"
+  ActivityLog --> Dashboard : select "Dashboard"
+  Settings --> Dashboard : select "Dashboard"
+}
+
+Main --> HiddenInTray : close window / hide()
+HiddenInTray : do / keep running in system tray
+HiddenInTray --> Main : tray "Open RishFlow" / show()
+HiddenInTray --> [*] : tray "Exit" / stop icon, destroy window
+@enduml

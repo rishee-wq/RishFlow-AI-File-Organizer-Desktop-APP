@@ -1,240 +1,197 @@
 import React from 'react';
-import {
-    FileText,
-    Image,
-    FileSpreadsheet,
-    Music,
-    Video,
-    File,
-    CheckSquare,
-    Square,
-    Eye,
-    Filter,
-} from 'lucide-react';
-import { Button } from './Button';
+import { motion } from 'motion/react';
+import { Check, Eye, Minus } from 'lucide-react';
 import { Badge } from './Badge';
-import { Tag } from './Tag';
 import { ProgressBar } from './ProgressBar';
 
 export interface FileItem {
-    id: string;
-    name: string;
-    type: string;
-    size: string;
-    category: string;
-    confidence: number;
-    tags: string[];
-    icon: React.ComponentType<any>;
-    color: string;
-    path?: string;
+  id: string;
+  name: string;
+  type: string;
+  size: string;
+  category: string;
+  confidence: number;
+  tags: string[];
+  icon: React.ComponentType<any>;
+  color: string;
+  path?: string;
 }
 
 interface FileGridProps {
-    files: FileItem[];
-    viewMode: 'list' | 'grid';
-    selectedFiles: Set<string>;
-    onToggleSelection: (id: string) => void;
-    onToggleSelectAll: () => void;
-    onPreviewFile: (file: FileItem) => void;
-    showSelectionControls?: boolean;
+  files: FileItem[];
+  viewMode: 'list' | 'grid';
+  selectedFiles: Set<string>;
+  onToggleSelection: (id: string) => void;
+  onToggleSelectAll: () => void;
+  onPreviewFile: (file: FileItem) => void;
+  showSelectionControls?: boolean;
+}
+
+// Only the first rows get an entrance animation — big folders stay snappy
+const ANIMATED = 36;
+
+function Checkbox({ state, onClick }: { state: 'on' | 'off' | 'some'; onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-checked={state === 'on'}
+      role="checkbox"
+      className={`flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-md border transition-all ${
+        state === 'off'
+          ? 'border-border-strong bg-transparent hover:border-primary'
+          : 'border-primary bg-primary text-primary-foreground shadow-[0_0_12px_-2px_var(--glow)]'
+      }`}
+    >
+      {state === 'on' && <Check className="h-3 w-3" strokeWidth={3.5} />}
+      {state === 'some' && <Minus className="h-3 w-3" strokeWidth={3.5} />}
+    </button>
+  );
 }
 
 export function FileGrid({
-    files,
-    viewMode,
-    selectedFiles,
-    onToggleSelection,
-    onToggleSelectAll,
-    onPreviewFile,
-    showSelectionControls = true,
+  files,
+  viewMode,
+  selectedFiles,
+  onToggleSelection,
+  onToggleSelectAll,
+  onPreviewFile,
+  showSelectionControls = true,
 }: FileGridProps) {
-    if (viewMode === 'list') {
-        return (
-            <div className="space-y-2">
-                {/* Table Header */}
-                <div className="mb-2 px-4 py-2 bg-muted/30 rounded-lg">
-                    <div className="grid grid-cols-12 gap-4 text-xs font-medium text-muted-foreground">
-                        {showSelectionControls && (
-                            <div className="col-span-1 flex items-center">
-                                <button
-                                    onClick={onToggleSelectAll}
-                                    className="hover:text-foreground transition-colors"
-                                >
-                                    {files.length > 0 && selectedFiles.size === files.length ? (
-                                        <CheckSquare className="w-4 h-4" />
-                                    ) : (
-                                        <Square className="w-4 h-4" />
-                                    )}
-                                </button>
-                            </div>
-                        )}
-                        <div className={showSelectionControls ? "col-span-4" : "col-span-5"}>File Name</div>
-                        <div className="col-span-2">Type</div>
-                        <div className="col-span-2">Category</div>
-                        <div className="col-span-2">Confidence</div>
-                        <div className="col-span-1">Actions</div>
-                    </div>
-                </div>
+  const allState = selectedFiles.size === 0 ? 'off' : selectedFiles.size === files.length ? 'on' : 'some';
 
-                {/* Table Rows */}
-                <div className="space-y-2">
-                    {files.map((file) => {
-                        const Icon = file.icon;
-                        const isSelected = selectedFiles.has(file.id);
-
-                        return (
-                            <div
-                                key={file.id}
-                                className={`px-4 py-3 rounded-lg transition-all ${isSelected
-                                        ? 'bg-primary/5 border-2 border-primary/30'
-                                        : 'bg-card hover:bg-accent/50 border-2 border-transparent'
-                                    }`}
-                            >
-                                <div className="grid grid-cols-12 gap-4 items-center">
-                                    {/* Checkbox */}
-                                    {showSelectionControls && (
-                                        <div className="col-span-1">
-                                            <button
-                                                onClick={() => onToggleSelection(file.id)}
-                                                className="hover:text-primary transition-colors"
-                                            >
-                                                {isSelected ? (
-                                                    <CheckSquare className="w-4 h-4 text-primary" />
-                                                ) : (
-                                                    <Square className="w-4 h-4 text-muted-foreground" />
-                                                )}
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {/* File Name */}
-                                    <div className={`${showSelectionControls ? "col-span-4" : "col-span-5"} flex items-center gap-3`}>
-                                        <div
-                                            className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                                            style={{ backgroundColor: `${file.color}15` }}
-                                        >
-                                            <Icon className="w-5 h-5" style={{ color: file.color }} />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-sm font-medium text-foreground truncate" title={file.name}>
-                                                {file.name}
-                                            </p>
-                                            <p className="text-xs text-muted-foreground">{file.size}</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Type */}
-                                    <div className="col-span-2">
-                                        <Badge variant="default">{file.type}</Badge>
-                                    </div>
-
-                                    {/* Category */}
-                                    <div className="col-span-2">
-                                        <Badge variant="info">{file.category}</Badge>
-                                    </div>
-
-                                    {/* Confidence */}
-                                    <div className="col-span-2">
-                                        <div className="flex items-center gap-2">
-                                            <ProgressBar value={file.confidence} size="sm" />
-                                            <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                                                {file.confidence}%
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Actions */}
-                                    <div className="col-span-1 flex justify-end">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => onPreviewFile(file)}
-                                            className="p-2"
-                                        >
-                                            <Eye className="w-4 h-4" />
-                                        </Button>
-                                    </div>
-                                </div>
-
-                                {/* Tags */}
-                                {file.tags.length > 0 && (
-                                    <div className={`mt-2 ${showSelectionControls ? "ml-14" : "ml-14"} flex gap-2`}>
-                                        {file.tags.map((tag, idx) => (
-                                            <Tag key={idx}>{tag}</Tag>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-        );
-    }
-
+  if (viewMode === 'list') {
     return (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {files.map((file) => {
-                const Icon = file.icon;
-                const isSelected = selectedFiles.has(file.id);
-
-                return (
-                    <div
-                        key={file.id}
-                        className={`relative group p-4 rounded-xl border-2 transition-all cursor-pointer ${isSelected
-                                ? 'bg-primary/5 border-primary shadow-sm'
-                                : 'bg-card border-border hover:border-primary/50 hover:shadow-md'
-                            }`}
-                        onClick={() => showSelectionControls && onToggleSelection(file.id)}
-                    >
-                        {showSelectionControls && (
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    onToggleSelection(file.id);
-                                }}
-                                className="absolute top-3 left-3 z-10"
-                            >
-                                {isSelected ? (
-                                    <CheckSquare className="w-5 h-5 text-primary bg-background rounded-sm" />
-                                ) : (
-                                    <Square className="w-5 h-5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
-                                )}
-                            </button>
-                        )}
-
-                        <div className="flex flex-col items-center text-center space-y-3 pt-2">
-                            <div
-                                className="w-16 h-16 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-200"
-                                style={{ backgroundColor: `${file.color}15` }}
-                            >
-                                <Icon className="w-8 h-8" style={{ color: file.color }} />
-                            </div>
-
-                            <div className="w-full">
-                                <p className="text-sm font-medium text-foreground truncate w-full" title={file.name}>
-                                    {file.name}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">{file.size}</p>
-                            </div>
-
-                            <div className="w-full flex justify-center pt-2 border-t border-border/50">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onPreviewFile(file);
-                                    }}
-                                    className="h-8 text-xs w-full"
-                                >
-                                    Preview
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            })}
+      <div>
+        <div className="mb-1 flex items-center gap-4 rounded-xl bg-secondary/50 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          {showSelectionControls && <Checkbox state={allState} onClick={onToggleSelectAll} />}
+          <span className="flex-1">File</span>
+          <span className="hidden w-28 sm:block">Type</span>
+          <span className="hidden w-32 md:block">Category</span>
+          <span className="hidden w-32 lg:block">Confidence</span>
+          <span className="w-9" />
         </div>
+
+        <div className="divide-y divide-border/60">
+          {files.map((file, i) => {
+            const Icon = file.icon;
+            const isSelected = selectedFiles.has(file.id);
+            return (
+              <motion.div
+                key={file.id}
+                initial={i < ANIMATED ? { opacity: 0, y: 8 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min(i, ANIMATED) * 0.018, duration: 0.35 }}
+                onClick={() => showSelectionControls && onToggleSelection(file.id)}
+                className={`group flex items-center gap-4 rounded-xl px-4 py-3 transition-colors ${
+                  showSelectionControls ? 'cursor-pointer' : ''
+                } ${isSelected ? 'bg-primary/[0.07]' : 'hover:bg-accent/40'}`}
+              >
+                {showSelectionControls && (
+                  <Checkbox
+                    state={isSelected ? 'on' : 'off'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleSelection(file.id);
+                    }}
+                  />
+                )}
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105"
+                    style={{ backgroundColor: `${file.color}1f`, color: file.color }}
+                  >
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground" title={file.name}>
+                      {file.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{file.size}</p>
+                  </div>
+                </div>
+                <div className="hidden w-28 sm:block">
+                  <Badge>{file.type}</Badge>
+                </div>
+                <div className="hidden w-32 md:block">
+                  <Badge variant="info">{file.category}</Badge>
+                </div>
+                <div className="hidden w-32 items-center gap-2 lg:flex">
+                  <ProgressBar value={file.confidence} size="sm" />
+                  <span className="w-8 text-right text-xs tabular-nums text-muted-foreground">{file.confidence}%</span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPreviewFile(file);
+                  }}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+                  title="Preview"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+      {files.map((file, i) => {
+        const Icon = file.icon;
+        const isSelected = selectedFiles.has(file.id);
+        return (
+          <motion.div
+            key={file.id}
+            initial={i < ANIMATED ? { opacity: 0, scale: 0.94 } : false}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: Math.min(i, ANIMATED) * 0.02, duration: 0.35 }}
+            onClick={() => showSelectionControls && onToggleSelection(file.id)}
+            className={`group relative cursor-pointer rounded-2xl border p-4 transition-all duration-300 ${
+              isSelected
+                ? 'border-primary/60 bg-primary/[0.07] shadow-[0_12px_40px_-20px_var(--glow)]'
+                : 'border-border bg-secondary/30 hover:-translate-y-0.5 hover:border-border-strong'
+            }`}
+          >
+            {showSelectionControls && (
+              <div className={`absolute left-3 top-3 z-10 transition-opacity ${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}`}>
+                <Checkbox
+                  state={isSelected ? 'on' : 'off'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelection(file.id);
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex flex-col items-center space-y-3 pt-2 text-center">
+              <span
+                className="flex h-16 w-16 items-center justify-center rounded-2xl transition-transform duration-300 group-hover:scale-110"
+                style={{ backgroundColor: `${file.color}1f`, color: file.color, boxShadow: `0 10px 30px -14px ${file.color}` }}
+              >
+                <Icon className="h-8 w-8" />
+              </span>
+              <div className="w-full">
+                <p className="w-full truncate text-sm font-medium text-foreground" title={file.name}>
+                  {file.name}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">{file.size}</p>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPreviewFile(file);
+                }}
+                className="w-full rounded-lg border-t border-border/60 pt-2 text-xs font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Preview
+              </button>
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
 }

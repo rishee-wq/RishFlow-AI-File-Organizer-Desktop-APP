@@ -1,3 +1,284 @@
-@import './fonts.css';
-@import './tailwind.css';
-@import './theme.css';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import 'tailwindcss' source(none);
+@source '../**/*.{js,ts,jsx,tsx}';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ───────────────────────── Design tokens ─────────────────────────
+   Three "currents". Every surface reads from these variables, so a
+   theme switch recolours the whole app without touching components. */
+
+:root,
+.theme-abyss {
+  color-scheme: dark;
+  --background: #02060b;
+  --foreground: #e6f4fb;
+  --surface: rgba(10, 24, 34, 0.55);
+  --surface-solid: #07121a;
+  --surface-strong: rgba(14, 32, 45, 0.85);
+  --primary: #64cefb;
+  --primary-foreground: #021018;
+  --secondary: #0c1a24;
+  --secondary-foreground: #d5ecf7;
+  --muted: #0c1a24;
+  --muted-foreground: #7f98a8;
+  --accent: #10283a;
+  --accent-foreground: #e6f4fb;
+  --border: rgba(100, 206, 251, 0.12);
+  --border-strong: rgba(100, 206, 251, 0.28);
+  --input-background: rgba(12, 26, 36, 0.8);
+  --ring: rgba(100, 206, 251, 0.45);
+  --destructive: #f87171;
+  --destructive-foreground: #1b0505;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --glow: rgba(100, 206, 251, 0.35);
+  --caustic-1: rgba(56, 189, 248, 0.16);
+  --caustic-2: rgba(45, 212, 191, 0.10);
+  --caustic-3: rgba(99, 102, 241, 0.10);
+}
+
+.theme-lagoon {
+  color-scheme: dark;
+  --background: #010b0a;
+  --foreground: #e3f7f3;
+  --surface: rgba(8, 30, 28, 0.55);
+  --surface-solid: #051412;
+  --surface-strong: rgba(10, 38, 35, 0.85);
+  --primary: #2ee6c5;
+  --primary-foreground: #01110e;
+  --secondary: #0a1f1d;
+  --secondary-foreground: #ccefe8;
+  --muted: #0a1f1d;
+  --muted-foreground: #7aa39b;
+  --accent: #0e2d29;
+  --accent-foreground: #e3f7f3;
+  --border: rgba(46, 230, 197, 0.12);
+  --border-strong: rgba(46, 230, 197, 0.28);
+  --input-background: rgba(8, 30, 28, 0.8);
+  --ring: rgba(46, 230, 197, 0.45);
+  --destructive: #fb7185;
+  --destructive-foreground: #1b0508;
+  --success: #4ade80;
+  --warning: #facc15;
+  --glow: rgba(46, 230, 197, 0.32);
+  --caustic-1: rgba(45, 212, 191, 0.16);
+  --caustic-2: rgba(16, 185, 129, 0.10);
+  --caustic-3: rgba(14, 165, 233, 0.10);
+}
+
+.theme-glacier {
+  color-scheme: light;
+  --background: #eef6fb;
+  --foreground: #04131d;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-solid: #ffffff;
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --primary: #0284c7;
+  --primary-foreground: #ffffff;
+  --secondary: #dfedf6;
+  --secondary-foreground: #0b3b57;
+  --muted: #e6f1f8;
+  --muted-foreground: #557185;
+  --accent: #d6eaf6;
+  --accent-foreground: #04131d;
+  --border: rgba(2, 132, 199, 0.14);
+  --border-strong: rgba(2, 132, 199, 0.3);
+  --input-background: rgba(255, 255, 255, 0.85);
+  --ring: rgba(2, 132, 199, 0.4);
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #059669;
+  --warning: #d97706;
+  --glow: rgba(2, 132, 199, 0.22);
+  --caustic-1: rgba(56, 189, 248, 0.22);
+  --caustic-2: rgba(45, 212, 191, 0.14);
+  --caustic-3: rgba(129, 140, 248, 0.12);
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  /* Fixed deep-sea glass used by the always-dark onboarding screen */
+  --color-brand-gray: #0c1a24;
+  --color-brand-cyan: #64cefb;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
+  --color-surface-strong: var(--surface-strong);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface-solid);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--border);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-glow: var(--glow);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply font-sans bg-black text-white antialiased;
+    background: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Slim, translucent scrollbars that match every current */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--primary) 25%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--primary) 22%, transparent);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  input[type='range'] {
+    accent-color: var(--primary);
+  }
+}
+
+/* ───────────────────────── Surfaces ───────────────────────── */
+
+@utility glass {
+  background: var(--surface);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid var(--border);
+}
+
+@utility glass-strong {
+  background: var(--surface-strong);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--border);
+}
+
+/* A hairline highlight along the top edge — reads as light on water */
+@utility edge-light {
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in srgb, white 9%, transparent),
+    0 20px 50px -24px rgba(0, 0, 0, 0.55);
+}
+
+/* ───────────────────────── Motion ───────────────────────── */
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-blink { animation: blink 1s step-end infinite; }
+
+@keyframes caustic-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  33%  { transform: translate3d(6%, -4%, 0) scale(1.08); }
+  66%  { transform: translate3d(-5%, 5%, 0) scale(0.96); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+.animate-caustic { animation: caustic-drift 22s ease-in-out infinite; }
+.animate-caustic-slow { animation: caustic-drift 34s ease-in-out infinite reverse; }
+
+@keyframes rise {
+  0%   { transform: translate3d(0, 0, 0) scale(0.6); opacity: 0; }
+  12%  { opacity: 0.9; }
+  100% { transform: translate3d(var(--sway, 12px), -110vh, 0) scale(1.1); opacity: 0; }
+}
+.animate-rise { animation: rise var(--dur, 9s) linear infinite; animation-delay: var(--delay, 0s); }
+
+@keyframes wave-x {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.animate-wave { animation: wave-x 6s linear infinite; }
+.animate-wave-slow { animation: wave-x 11s linear infinite; }
+
+@keyframes sheen {
+  from { transform: translateX(-120%) skewX(-18deg); }
+  to   { transform: translateX(220%) skewX(-18deg); }
+}
+.animate-sheen { animation: sheen 2.8s ease-in-out infinite; }
+
+@keyframes ripple-ring {
+  0%   { transform: scale(0.2); opacity: 0.9; }
+  100% { transform: scale(3.4); opacity: 0; }
+}
+.animate-ripple { animation: ripple-ring 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+
+@keyframes flow-gradient {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-flow-gradient { background-size: 220% 220%; animation: flow-gradient 9s ease infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-caustic,
+  .animate-caustic-slow,
+  .animate-rise,
+  .animate-wave,
+  .animate-wave-slow,
+  .animate-sheen,
+  .animate-ripple,
+  .animate-flow-gradient {
+    animation: none !important;
+  }
+}

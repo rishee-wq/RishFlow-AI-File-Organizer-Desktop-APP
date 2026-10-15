@@ -4,13 +4,17 @@ interface CardProps {
   children: React.ReactNode;
   className?: string;
   hover?: boolean;
+  style?: React.CSSProperties;
 }
 
-export function Card({ children, className = '', hover = false }: CardProps) {
+export function Card({ children, className = '', hover = false, style }: CardProps) {
   return (
     <div
-      className={`bg-card text-card-foreground rounded-xl border border-border shadow-sm ${
-        hover ? 'transition-all duration-200 hover:shadow-md hover:border-primary/30' : ''
+      style={style}
+      className={`glass edge-light relative overflow-hidden rounded-2xl text-foreground ${
+        hover
+          ? 'transition-all duration-500 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-[0_24px_60px_-28px_var(--glow)]'
+          : ''
       } ${className}`}
     >
       {children}
@@ -27,5 +31,5 @@ export function CardContent({ children, className = '' }: { children: React.Reac
 }
 
 export function CardTitle({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <h3 className={`${className}`}>{children}</h3>;
+  return <h3 className={`text-base font-semibold tracking-tight text-foreground ${className}`}>{children}</h3>;
 }

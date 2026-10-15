@@ -1,412 +1,296 @@
 import React, { useState } from 'react';
-import { Search, FolderTree, Plus, Edit2, Trash2, X, Eye, FileText, Image, FileSpreadsheet, Music, Video, File } from 'lucide-react';
-import { Card, CardContent } from './Card';
-import { Button } from './Button';
+import { AnimatePresence, motion } from 'motion/react';
+import { Search, FolderTree, Plus, Edit2, Trash2, Eye, Check } from 'lucide-react';
 import { useData, Category, FileItem as ContextFileItem } from '@/app/contexts/DataContext';
+import { getIconForFile } from '../lib/files';
+import { Card } from './Card';
+import { Button } from './Button';
+import { Input } from './Input';
+import { Modal, useConfirm } from './Modal';
 import { FileGrid, FileItem as GridFileItem } from './FileGrid';
+import { PageHeader } from './PageHeader';
 
-export function CategoriesView() {
+const EMOJI_LIST = ['📁', '📂', '📄', '📝', '📊', '📉', '📷', '🎬', '🎵', '💼', '💰', '🏠', '🎓', '🎁', '🛒', '🎮', '✈️', '🍔', '💪', '❤️', '⭐', '🔥', '💡', '🔒'];
+const COLORS = ['#38bdf8', '#64cefb', '#2dd4bf', '#34d399', '#818cf8', '#a78bfa', '#f472b6', '#fb7185', '#fbbf24', '#fb923c', '#94a3b8', '#06b6d4'];
+
+interface CategoriesViewProps {
+  onPreviewFile?: (file: GridFileItem) => void;
+}
+
+export function CategoriesView({ onPreviewFile }: CategoriesViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [showNewCategory, setShowNewCategory] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryColor, setNewCategoryColor] = useState('#3b82f6');
-  const [newCategoryIcon, setNewCategoryIcon] = useState('📁');
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editColor, setEditColor] = useState('');
-  const [editIcon, setEditIcon] = useState('');
-
-  // New state for viewing category details
+  const [editor, setEditor] = useState<{ mode: 'new' } | { mode: 'edit'; id: string } | null>(null);
+  const [name, setName] = useState('');
+  const [color, setColor] = useState(COLORS[0]);
+  const [icon, setIcon] = useState('📁');
   const [viewingCategory, setViewingCategory] = useState<Category | null>(null);
+  const confirm = useConfirm();
 
   const { categories, addCategory, updateCategory, deleteCategory, files } = useData();
 
-  const EMOJI_LIST = ['📁', '📂', '📄', '📝', '📊', '📉', '📷', '🎬', '🎵', '💼', '💰', '🏠', '🎓', '🎁', '🛒', '🎮', '✈️', '🍔', '💪', '❤️', '⭐', '🔥', '💡', '🔒'];
+  const filtered = categories.filter((cat) => cat.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const maxCount = Math.max(1, ...categories.map((c) => c.fileCount));
 
-  const filteredCategories = categories.filter((cat: Category) =>
-    cat.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const getCategoryFiles = (category: Category | null): GridFileItem[] =>
+    category
+      ? files
+          .filter((f: ContextFileItem) => f.category === category.name)
+          .map((f: ContextFileItem) => ({ ...f, icon: getIconForFile(f.name) }))
+      : [];
 
-  const getIconForFile = (fileName: string) => {
-    const ext = fileName.split('.').pop()?.toLowerCase() || '';
-    if (['pdf'].includes(ext)) return FileText;
-    if (['doc', 'docx', 'txt'].includes(ext)) return FileText;
-    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(ext)) return Image;
-    if (['xlsx', 'xls', 'csv'].includes(ext)) return FileSpreadsheet;
-    if (['mp3', 'wav', 'flac'].includes(ext)) return Music;
-    if (['mp4', 'avi', 'mov'].includes(ext)) return Video;
-    return File;
+  const openNew = () => {
+    setName('');
+    setColor(COLORS[0]);
+    setIcon('📁');
+    setEditor({ mode: 'new' });
   };
 
-  const getCategoryFiles = (category: Category | null): GridFileItem[] => {
-    if (!category) return [];
-    return files
-      .filter((f: ContextFileItem) => f.category === category.name)
-      .map((f: ContextFileItem) => ({
-        ...f,
-        icon: getIconForFile(f.name)
-      }));
+  const openEdit = (c: Category) => {
+    setName(c.name);
+    setColor(c.color);
+    setIcon(c.icon);
+    setEditor({ mode: 'edit', id: c.id });
   };
 
-  const handleAddCategory = () => {
-    if (newCategoryName.trim()) {
-      addCategory(newCategoryName, newCategoryColor, newCategoryIcon);
-      setNewCategoryName('');
-      setNewCategoryColor('#3b82f6');
-      setNewCategoryIcon('📁');
-      setShowNewCategory(false);
-    }
+  const save = () => {
+    if (!name.trim() || !editor) return;
+    if (editor.mode === 'new') addCategory(name.trim(), color, icon);
+    else updateCategory(editor.id, name.trim(), color, icon);
+    setEditor(null);
   };
 
-  const handleUpdateCategory = (id: string) => {
-    if (editName.trim()) {
-      updateCategory(id, editName, editColor, editIcon);
-      setEditingId(null);
-      setEditName('');
-      setEditColor('');
-      setEditIcon('');
-    }
+  const remove = async (c: Category) => {
+    const ok = await confirm({
+      title: `Delete “${c.name}”?`,
+      description: 'The category is removed from RishFlow. Files already on disk are not touched.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (ok) deleteCategory(c.id);
   };
 
-  const colors = [
-    '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b',
-    '#10b981', '#06b6d4', '#f43f5e', '#14b8a6',
-    '#6366f1', '#a855f7', '#d946ef', '#ea580c'
-  ];
+  const viewingFiles = getCategoryFiles(viewingCategory);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl mb-2 text-foreground">Categories</h1>
-          <p className="text-muted-foreground">
-            Manage and organize your file categories ({categories.length} total)
-          </p>
-        </div>
-        <Button onClick={() => setShowNewCategory(true)}>
-          <Plus className="w-5 h-5 mr-2" />
-          New Category
-        </Button>
+    <div className="space-y-8">
+      <PageHeader
+        eyebrow="Library"
+        title="Categories"
+        subtitle={`Where every file finds its place — ${categories.length} streams in total.`}
+        actions={
+          <Button onClick={openNew}>
+            <Plus className="h-4 w-4" /> New category
+          </Button>
+        }
+      />
+
+      <div className="max-w-md">
+        <Input
+          icon={<Search className="h-4 w-4" />}
+          placeholder="Search categories…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
       </div>
 
-      {/* New Category Form */}
-      {showNewCategory && (
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Create New Category</h3>
-              <button onClick={() => setShowNewCategory(false)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-2">Category Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g., Archive, Backup, etc."
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-2">Icon</label>
-                <div className="flex items-center gap-2 flex-wrap p-2 bg-muted/20 rounded-lg">
-                  {EMOJI_LIST.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => setNewCategoryIcon(emoji)}
-                      className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center transition-all ${newCategoryIcon === emoji ? 'bg-primary text-primary-foreground shadow-sm scale-110' : 'hover:bg-muted'
-                        }`}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-2">Color</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {colors.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setNewCategoryColor(color)}
-                      className={`w-8 h-8 rounded-lg border-2 transition-all ${newCategoryColor === color ? 'border-foreground scale-110' : 'border-border'
-                        }`}
-                      style={{ backgroundColor: color }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <Button onClick={handleAddCategory} className="flex-1">
-                  Create Category
-                </Button>
-                <Button variant="secondary" onClick={() => setShowNewCategory(false)} className="flex-1">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Search & Filter */}
-      <div className="flex items-center gap-4">
-        <div className="flex-1 max-w-md relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search categories..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-input-background border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-all"
-          />
-        </div>
-      </div>
-
-      {/* Categories Grid */}
-      {filteredCategories.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {filteredCategories.map((category) => (
-            <Card key={category.id} hover className="group">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
+      {filtered.length > 0 ? (
+        <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <AnimatePresence>
+            {filtered.map((category, i) => (
+              <motion.div
+                key={category.id}
+                layout
+                initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.94 }}
+                transition={{ duration: 0.4, delay: Math.min(i, 12) * 0.04, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Card hover className="group h-full">
+                  {/* colour bloom */}
                   <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl"
-                    style={{ backgroundColor: `${category.color}15` }}
-                  >
-                    {category.icon}
-                  </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => {
-                        setEditingId(category.id);
-                        setEditName(category.name);
-                        setEditColor(category.color);
-                        setEditIcon(category.icon);
-                      }}
-                      className="w-8 h-8 rounded-lg hover:bg-accent flex items-center justify-center"
-                    >
-                      <Edit2 className="w-4 h-4 text-muted-foreground" />
-                    </button>
-                    <button
-                      onClick={() => deleteCategory(category.id)}
-                      className="w-8 h-8 rounded-lg hover:bg-accent flex items-center justify-center"
-                    >
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </button>
-                  </div>
-                </div>
-
-                <h3 className="font-semibold mb-2 text-foreground">{category.name}</h3>
-
-                <div className="mb-4">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full text-xs h-8"
-                    onClick={() => setViewingCategory(category)}
-                  >
-                    <Eye className="w-3 h-3 mr-2" />
-                    View Files
-                  </Button>
-                </div>
-
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <FolderTree className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      {category.fileCount} files
-                    </span>
-                  </div>
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: category.color }}
+                    className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-40 blur-2xl transition-opacity duration-500 group-hover:opacity-70"
+                    style={{ background: category.color }}
                   />
-                </div>
+                  <div className="relative p-6">
+                    <div className="mb-5 flex items-start justify-between">
+                      <span
+                        className="flex h-12 w-12 items-center justify-center rounded-2xl text-2xl"
+                        style={{ backgroundColor: `${category.color}22`, boxShadow: `inset 0 0 0 1px ${category.color}40` }}
+                      >
+                        {category.icon}
+                      </span>
+                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          onClick={() => openEdit(category)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => remove(category)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-destructive hover:bg-destructive/10"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
 
-                <p className="text-xs text-muted-foreground">
-                  Updated {category.lastModified}
-                </p>
+                    <h3 className="truncate text-lg font-semibold tracking-tight">{category.name}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Updated {category.lastModified}</p>
 
-                {/* Progress Bar */}
-                <div className="mt-4 pt-4 border-t border-border">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-muted-foreground">Files</span>
-                    <span className="text-xs font-medium text-foreground">
-                      {category.fileCount}
-                    </span>
+                    <div className="mt-5">
+                      <div className="mb-2 flex items-baseline justify-between">
+                        <span className="text-2xl font-semibold tabular-nums tracking-tight">{category.fileCount}</span>
+                        <span className="text-xs text-muted-foreground">files</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                        <motion.div
+                          className="h-full rounded-full"
+                          style={{ backgroundColor: category.color, boxShadow: `0 0 10px ${category.color}` }}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(category.fileCount / maxCount) * 100}%` }}
+                          transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+                        />
+                      </div>
+                    </div>
+
+                    <Button variant="secondary" size="sm" className="mt-5 w-full" onClick={() => setViewingCategory(category)}>
+                      <Eye className="h-3.5 w-3.5" /> View files
+                    </Button>
                   </div>
-                  <div className="w-full h-1.5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        backgroundColor: category.color,
-                        width: `${Math.min((category.fileCount / 100) * 100, 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
       ) : (
         <Card>
-          <CardContent className="p-12 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-4">
-              <Search className="w-8 h-8 text-muted-foreground" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2 text-foreground">
-              {categories.length === 0 ? 'No categories yet' : 'No categories found'}
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              {categories.length === 0
-                ? 'Create a new category to get started'
-                : 'Try adjusting your search query'}
+          <div className="flex flex-col items-center p-14 text-center">
+            <span className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Search className="h-6 w-6" />
+            </span>
+            <h3 className="text-lg font-semibold">{categories.length === 0 ? 'No categories yet' : 'Nothing matches'}</h3>
+            <p className="mb-5 mt-1 text-sm text-muted-foreground">
+              {categories.length === 0 ? 'Create one, or organize a folder and they will appear.' : 'Try a different search.'}
             </p>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                if (categories.length === 0) {
-                  setShowNewCategory(true);
-                } else {
-                  setSearchQuery('');
-                }
-              }}
-            >
-              {categories.length === 0 ? 'Create Category' : 'Clear Search'}
+            <Button variant="secondary" onClick={() => (categories.length === 0 ? openNew() : setSearchQuery(''))}>
+              {categories.length === 0 ? 'Create category' : 'Clear search'}
             </Button>
-          </CardContent>
+          </div>
         </Card>
       )}
 
-      {/* Edit Modal */}
-      {editingId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold">Edit Category</h3>
-                <button onClick={() => setEditingId(null)} className="text-muted-foreground hover:text-foreground">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-2">Name</label>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg bg-input-background border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-2">Icon</label>
-                  <div className="flex items-center gap-2 flex-wrap p-2 bg-muted/20 rounded-lg">
-                    {EMOJI_LIST.map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => setEditIcon(emoji)}
-                        className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center transition-all ${editIcon === emoji ? 'bg-primary text-primary-foreground shadow-sm scale-110' : 'hover:bg-muted'
-                          }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-sm font-medium text-foreground block mb-2">Color</label>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {colors.map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => setEditColor(color)}
-                        className={`w-8 h-8 rounded-lg border-2 transition-all ${editColor === color ? 'border-foreground scale-110' : 'border-border'
-                          }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="flex gap-3 pt-4">
-                  <Button onClick={() => handleUpdateCategory(editingId)} className="flex-1">
-                    Save Changes
-                  </Button>
-                  <Button variant="secondary" onClick={() => setEditingId(null)} className="flex-1">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Category Details Modal */}
-      {viewingCategory && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-6">
-          <Card className="w-full max-w-5xl max-h-[90vh] flex flex-col">
-            <div className="p-6 border-b border-border flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-10 h-10 rounded-lg flex items-center justify-center text-xl"
-                  style={{ backgroundColor: `${viewingCategory.color}15` }}
+      {/* Create / edit */}
+      <Modal
+        open={!!editor}
+        onClose={() => setEditor(null)}
+        title={editor?.mode === 'edit' ? 'Edit category' : 'New category'}
+        subtitle="Name it, give it an icon and a colour."
+        icon={
+          <span
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl"
+            style={{ backgroundColor: `${color}22`, boxShadow: `inset 0 0 0 1px ${color}55` }}
+          >
+            {icon}
+          </span>
+        }
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditor(null)}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={!name.trim()}>
+              {editor?.mode === 'edit' ? 'Save changes' : 'Create category'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-5 p-6">
+          <Input
+            label="Name"
+            placeholder="e.g. Invoices, Screenshots, Archive"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && save()}
+          />
+          <div>
+            <p className="mb-2 text-sm font-medium">Icon</p>
+            <div className="grid grid-cols-8 gap-1.5 rounded-2xl bg-secondary/50 p-2">
+              {EMOJI_LIST.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => setIcon(emoji)}
+                  className={`flex aspect-square items-center justify-center rounded-xl text-lg transition-all ${
+                    icon === emoji ? 'scale-110 bg-primary/20 ring-1 ring-primary' : 'hover:bg-accent'
+                  }`}
                 >
-                  {viewingCategory.icon}
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">{viewingCategory.name}</h3>
-                  <p className="text-sm text-muted-foreground">{getCategoryFiles(viewingCategory).length} files sorted</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setViewingCategory(null)}
-                className="p-2 hover:bg-muted rounded-full transition-colors"
-              >
-                <X className="w-5 h-5 text-muted-foreground" />
-              </button>
+                  {emoji}
+                </button>
+              ))}
             </div>
-
-            <div className="flex-1 overflow-auto p-6 bg-muted/10">
-              {getCategoryFiles(viewingCategory).length > 0 ? (
-                <FileGrid
-                  files={getCategoryFiles(viewingCategory)}
-                  viewMode="list"
-                  selectedFiles={new Set()}
-                  onToggleSelection={() => { }}
-                  onToggleSelectAll={() => { }}
-                  onPreviewFile={() => { }}
-                  showSelectionControls={false}
-                />
-              ) : (
-                <div className="h-64 flex flex-col items-center justify-center text-muted-foreground">
-                  <div className="w-16 h-16 rounded-2xl bg-muted/20 flex items-center justify-center mb-4">
-                    <FolderTree className="w-8 h-8 opacity-50" />
-                  </div>
-                  <p>No files found in this category yet.</p>
-                  <p className="text-sm opacity-70 mt-1">Files organized into this category will appear here.</p>
-                </div>
-              )}
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium">Colour</p>
+            <div className="flex flex-wrap gap-2">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-110"
+                  style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px var(--background), 0 0 0 4px ${c}` : undefined }}
+                >
+                  {color === c && <Check className="h-4 w-4 text-black/70" strokeWidth={3} />}
+                </button>
+              ))}
             </div>
-
-            <div className="p-4 border-t border-border bg-card flex justify-end">
-              <Button onClick={() => setViewingCategory(null)}>
-                Close
-              </Button>
-            </div>
-          </Card>
+          </div>
         </div>
-      )}
+      </Modal>
+
+      {/* Category contents */}
+      <Modal
+        open={!!viewingCategory}
+        onClose={() => setViewingCategory(null)}
+        className="max-w-5xl"
+        title={viewingCategory?.name}
+        subtitle={`${viewingFiles.length} files sorted here`}
+        icon={
+          viewingCategory && (
+            <span
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-xl"
+              style={{ backgroundColor: `${viewingCategory.color}22` }}
+            >
+              {viewingCategory.icon}
+            </span>
+          )
+        }
+      >
+        <div className="p-4 sm:p-6">
+          {viewingFiles.length > 0 ? (
+            <FileGrid
+              files={viewingFiles}
+              viewMode="list"
+              selectedFiles={new Set()}
+              onToggleSelection={() => {}}
+              onToggleSelectAll={() => {}}
+              onPreviewFile={(f) => {
+                setViewingCategory(null);
+                onPreviewFile?.(f);
+              }}
+              showSelectionControls={false}
+            />
+          ) : (
+            <div className="flex h-56 flex-col items-center justify-center text-center text-muted-foreground">
+              <FolderTree className="mb-3 h-8 w-8 opacity-50" />
+              <p className="text-sm">No files in this category yet.</p>
+              <p className="mt-1 text-xs opacity-70">Files organized into it will appear here.</p>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }

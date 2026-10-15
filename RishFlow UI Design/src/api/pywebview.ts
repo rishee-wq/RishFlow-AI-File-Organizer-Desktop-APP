@@ -19,6 +19,35 @@ interface PyWebViewAPI {
   save_state: (key: string, value: any) => Promise<any>;
   load_state: (key: string) => Promise<any>;
   clear_activity_logs: () => Promise<any>;
+  get_smart_keywords: (filePath: string) => Promise<any>;
+  get_dominant_color: (filePath: string) => Promise<any>;
+  get_system_info: () => Promise<SystemInfo | { error: string }>;
+  get_organize_status: () => Promise<OrganizeStatus>;
+}
+
+export interface SystemInfo {
+  name: string;
+  user: string;
+  device_type: string;
+  model: string;
+  cpu: string;
+  cores: number;
+  ram_gb: number;
+  gpu: string;
+  os: string;
+  arch: string;
+  disk_total_gb: number;
+  disk_free_gb: number;
+  tier: string;
+}
+
+export interface OrganizeStatus {
+  in_progress: boolean;
+  total: number;
+  done: number;
+  moved: number;
+  skipped: number;
+  failed: number;
 }
 
 declare global {
@@ -81,9 +110,22 @@ export function isInPyWebView(): boolean {
  */
 export class PythonAPIClient {
   private api: PyWebViewAPI | null = null;
+  private initPromise: Promise<void> | null = null;
+  // save_state does a read-modify-write of state.json, so concurrent saves can
+  // clobber each other. Chain them so only one is in flight at a time.
+  private saveQueue: Promise<unknown> = Promise.resolve();
 
-  async initialize(): Promise<void> {
-    this.api = await getPyWebViewAPI();
+  initialize(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = getPyWebViewAPI().then((api) => {
+        this.api = api;
+      });
+    }
+    return this.initPromise;
+  }
+
+  get available(): boolean {
+    return !!this.api;
   }
 
   async browseFolder(title = 'Select Folder'): Promise<string> {
@@ -160,7 +202,10 @@ export class PythonAPIClient {
 
   async saveState(key: string, value: any): Promise<any> {
     if (!this.api) throw new Error('Python API not available');
-    return this.api.save_state(key, value);
+    const api = this.api;
+    const run = this.saveQueue.then(() => api.save_state(key, value));
+    this.saveQueue = run.catch(() => {});
+    return run;
   }
 
   async loadState(key: string): Promise<any> {
@@ -171,6 +216,28 @@ export class PythonAPIClient {
   async clearActivityLogs(): Promise<any> {
     if (!this.api) throw new Error('Python API not available');
     return this.api.clear_activity_logs();
+  }
+
+  async getSmartKeywords(filePath: string): Promise<any> {
+    if (!this.api) throw new Error('Python API not available');
+    return this.api.get_smart_keywords(filePath);
+  }
+
+  async getDominantColor(filePath: string): Promise<any> {
+    if (!this.api) throw new Error('Python API not available');
+    return this.api.get_dominant_color(filePath);
+  }
+
+  async getSystemInfo(): Promise<SystemInfo> {
+    if (!this.api) throw new Error('Python API not available');
+    const res = await this.api.get_system_info();
+    if ('error' in res) throw new Error(res.error);
+    return res;
+  }
+
+  async getOrganizeStatus(): Promise<OrganizeStatus> {
+    if (!this.api) throw new Error('Python API not available');
+    return this.api.get_organize_status();
   }
 }
 

@@ -1,0 +1,102 @@
+@startuml 05_class_diagram
+!include _style.iuml
+title RishFlow – Class Diagram (bonus)
+skinparam classAttributeIconSize 0
+hide empty members
+
+class RishFlowAPI {
+  - db_path : str
+  - conn : Connection
+  - organizer_thread : Thread
+  - last_operations : list
+  - _ops_lock : Lock
+  - _last_ops_file : str
+  - _ai_index : list
+  - _ai_index_meta : dict
+  + init_database()
+  + log_activity(action, source, destination, status)
+  + get_logs() : list
+  + browse_folder(title) : str
+  + start_organizing(source, dest, sort_mode, categories) : dict
+  - _organize_files(source, dest, sort_mode, categories)
+  + scan_source(folder) : dict
+  + get_folder_stats(folder) : dict
+  + start_index_for_ai(folder) : dict
+  + index_for_ai(folder) : dict
+  + get_ai_index_status() : dict
+  + query_ai(folder, query) : dict
+  + revert_last() : dict
+  + find_duplicates(folder) : dict
+  + save_state(key, value)
+  + load_state(key)
+  + clear_activity_logs() : dict
+  + scan_organized_files(root) : dict
+  + get_smart_keywords(path) : list
+  + get_dominant_color(path) : dict
+}
+
+class AISmartSorter {
+  - face_cascade : CascadeClassifier
+  - profile_cascade : CascadeClassifier
+  + classify_file(path) : str
+  + classify_image(path) : str
+  + classify_document(path) : str
+  + classify_code(path) : str
+  + classify_generic(path) : str
+  + extract_date(text) : str
+  + estimate_text_density(gray) : float
+  + is_colorful(img) : bool
+  + detect_language(content) : str
+  + extract_keywords(text, max) : list
+  + extract_dominant_color(path) : str
+}
+
+class DuplicateFinder {
+  - hashes : dict
+  + hash_file(path, block_size) : str
+  + perceptual_hash(path) : str
+  + find_duplicates(folder) : list
+}
+
+class ActivityLog <<table>> {
+  id : int
+  timestamp : datetime
+  action : str
+  source_file : str
+  destination : str
+  status : str
+}
+
+class AppState <<state.json>> {
+  last_source_folder : str
+  last_dest_folder : str
+  app_settings : dict
+  user_profile : dict
+  default_sort_mode : str
+  theme : str
+}
+
+class FileOperation <<last_ops.json>> {
+  dest_path : str
+  original_path : str
+}
+
+class TrayIcon <<pystray>> {
+  + on_show()
+  + on_quit()
+}
+
+class WebviewWindow <<pywebview>> {
+  + evaluate_js(code)
+  + create_file_dialog()
+  + show() / hide()
+}
+
+RishFlowAPI ..> AISmartSorter : uses
+RishFlowAPI ..> DuplicateFinder : uses
+RishFlowAPI "1" --> "*" ActivityLog : writes
+RishFlowAPI "1" o-- "*" FileOperation : records
+RishFlowAPI --> AppState : saves / loads
+WebviewWindow --> RishFlowAPI : js_api
+TrayIcon --> WebviewWindow : shows / hides
+@enduml
